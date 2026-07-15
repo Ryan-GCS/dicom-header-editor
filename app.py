@@ -151,7 +151,7 @@ defaults = {
     "upload_mode":     None,
     "zip_bytes":       None,
     "summary":         None,
-    "queue_msg":       None,   # ← 성공/실패 메시지 보존용
+    "queue_msg":       None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -276,7 +276,6 @@ if st.session_state.ds is not None:
             key="selected_tag_selectbox"
         )
     with col_b:
-        # 현재 선택된 태그의 기존 값을 기본값으로
         if selected_tag:
             current_val = df[df["Tag"] == selected_tag]["Value"].values[0]
             default_val = st.session_state.modifications.get(selected_tag, current_val)
@@ -286,12 +285,10 @@ if st.session_state.ds is not None:
         new_value = st.text_input(
             "New value",
             value=default_val,
-            key="new_value_input"   # ← 고정 key 사용
         )
 
-    # Queue Change 버튼 (전체 너비)
+    # ── Queue Change 버튼 ────────────────────────────
     if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
-        # ✅ session_state["new_value_input"] 대신 변수 직접 사용
         val = new_value.strip() if new_value else ""
         if not selected_tag:
             st.session_state.queue_msg = ("error", "⚠️ Please select a tag.")
@@ -304,7 +301,7 @@ if st.session_state.ds is not None:
             st.session_state.summary        = None
             st.session_state.queue_msg      = ("success", f"✅ Queued: {selected_tag}  →  {val}")
 
-    # 메시지 출력 (rerun 없이 유지)
+    # 메시지 출력
     if st.session_state.queue_msg:
         msg_type, msg_text = st.session_state.queue_msg
         if msg_type == "success":
@@ -316,8 +313,8 @@ if st.session_state.ds is not None:
     if st.session_state.modifications:
         st.subheader("📋 Pending Modifications")
 
-        mod_data = []
         all_tags_df = pd.DataFrame(st.session_state.tags_df)
+        mod_data = []
         for tag, val in st.session_state.modifications.items():
             kw  = all_tags_df[all_tags_df["Tag"] == tag]["Keyword"].values
             kw  = kw[0] if len(kw) > 0 else "Unknown"
@@ -412,13 +409,14 @@ if st.session_state.ds is not None:
             st.info("All DICOM files in the ZIP will be modified with the same tag changes.")
 
             if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
-                modified_zip, all_results, summary = process_zip(
-                    st.session_state.zip_bytes,
-                    st.session_state.modifications
-                )
-                st.session_state.modified_bytes = modified_zip
-                st.session_state.mod_results    = all_results
-                st.session_state.summary        = summary
+                with st.spinner("Processing ZIP..."):
+                    modified_zip, all_results, summary = process_zip(
+                        st.session_state.zip_bytes,
+                        st.session_state.modifications
+                    )
+                    st.session_state.modified_bytes = modified_zip
+                    st.session_state.mod_results    = all_results
+                    st.session_state.summary        = summary
 
             if st.session_state.summary:
                 summary = st.session_state.summary
@@ -456,14 +454,14 @@ with st.sidebar:
     **Single File**
     1. Select *Single DICOM* mode
     2. Upload a `.dcm` file
-    3. Search & edit tags
-    4. Queue Change → Apply → Download
+    3. Select tag → Enter new value
+    4. 📝 Queue Change → 🚀 Apply Changes → ⬇️ Download
 
     **Batch (ZIP)**
     1. Select *Multiple DICOMs* mode
     2. Upload a `.zip` containing DICOM files
-    3. Queue Changes *(previewed from first file)*
-    4. Apply to All → Download ZIP
+    3. Select tag → Enter new value
+    4. 📝 Queue Change → 🚀 Apply to All → ⬇️ Download ZIP
     """)
 
     st.divider()
@@ -502,31 +500,31 @@ with st.sidebar:
         st.caption("AIRS Medical — DCS Upload Tags")
         st.caption("Group: **00E1** | Creator: AIRS Medical")
         upload_tags = [
-            {"Tag": "(00E1,1010)", "Name": "StudyId",             "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1011)", "Name": "SeriesId",            "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1012)", "Name": "ImageId",             "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1014)", "Name": "UploadId",            "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1015)", "Name": "DeviceId",            "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1030)", "Name": "DispatchUnitId",      "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1031)", "Name": "PostProcessingType",  "VR": "LO",
+            {"Tag": "(00E1,1010)", "Name": "StudyId",              "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1011)", "Name": "SeriesId",             "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1012)", "Name": "ImageId",              "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1014)", "Name": "UploadId",             "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1015)", "Name": "DeviceId",             "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1030)", "Name": "DispatchUnitId",       "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1031)", "Name": "PostProcessingType",   "VR": "LO",
              "Note": "MIP/MPR/MinIP/ADC/EXP_ADC\nMIPComposing/RadialMIP\nParallelMIP/ParallelMPR\nParallelMinIP/Calculated_bvalue"},
-            {"Tag": "(00E1,1032)", "Name": "SourceDispatchUnitId","VR": "SH", "Note": ""},
-            {"Tag": "(00E1,1033)", "Name": "ADCType",             "VR": "LO", "Note": "ADC"},
-            {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold",   "VR": "LO", "Note": "ADC, Diffusion"},
-            {"Tag": "(00E1,1035)", "Name": "BValue",              "VR": "LO", "Note": "ADC, Diffusion"},
-            {"Tag": "(00E1,1036)", "Name": "IsMarked",            "VR": "CS", "Note": "Mark only"},
-            {"Tag": "(00E1,1037)", "Name": "NumberOfProjections", "VR": "IS",
+            {"Tag": "(00E1,1032)", "Name": "SourceDispatchUnitId", "VR": "SH", "Note": ""},
+            {"Tag": "(00E1,1033)", "Name": "ADCType",              "VR": "LO", "Note": "ADC"},
+            {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold",    "VR": "LO", "Note": "ADC, Diffusion"},
+            {"Tag": "(00E1,1035)", "Name": "BValue",               "VR": "LO", "Note": "ADC, Diffusion"},
+            {"Tag": "(00E1,1036)", "Name": "IsMarked",             "VR": "CS", "Note": "Mark only"},
+            {"Tag": "(00E1,1037)", "Name": "NumberOfProjections",  "VR": "IS",
              "Note": "MIPComposing/RadialMIP\nParallelRendering"},
-            {"Tag": "(00E1,1038)", "Name": "RadialAngle",         "VR": "IS", "Note": "MIPComposing, RadialMIP"},
-            {"Tag": "(00E1,1039)", "Name": "Zoom",                "VR": "LO", "Note": "RadialMIP, ParallelRendering"},
-            {"Tag": "(00E1,1040)", "Name": "SliceOrder",          "VR": "LO",
+            {"Tag": "(00E1,1038)", "Name": "RadialAngle",          "VR": "IS", "Note": "MIPComposing, RadialMIP"},
+            {"Tag": "(00E1,1039)", "Name": "Zoom",                 "VR": "LO", "Note": "RadialMIP, ParallelRendering"},
+            {"Tag": "(00E1,1040)", "Name": "SliceOrder",           "VR": "LO",
              "Note": "RadialMIP / ParallelRendering"},
-            {"Tag": "(00E1,1041)", "Name": "Orientation",         "VR": "LO",
+            {"Tag": "(00E1,1041)", "Name": "Orientation",          "VR": "LO",
              "Note": "ParallelRendering\nRadialMIP (Radial Axis)"},
-            {"Tag": "(00E1,1042)", "Name": "Gap",                 "VR": "LO", "Note": "ParallelRendering"},
-            {"Tag": "(00E1,1043)", "Name": "Thickness",           "VR": "LO", "Note": "ParallelRendering"},
-            {"Tag": "(00E1,1044)", "Name": "CalculatedBvalue",    "VR": "SL", "Note": "Diffusion"},
-            {"Tag": "(00E1,1045)", "Name": "PostprocessingMode",  "VR": "LO",
+            {"Tag": "(00E1,1042)", "Name": "Gap",                  "VR": "LO", "Note": "ParallelRendering"},
+            {"Tag": "(00E1,1043)", "Name": "Thickness",            "VR": "LO", "Note": "ParallelRendering"},
+            {"Tag": "(00E1,1044)", "Name": "CalculatedBvalue",     "VR": "SL", "Note": "Diffusion"},
+            {"Tag": "(00E1,1045)", "Name": "PostprocessingMode",   "VR": "LO",
              "Note": "User_Defined_Mode\nDICOM_Referenced_Mode"},
         ]
         for t in upload_tags:
