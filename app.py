@@ -38,13 +38,82 @@ sidebar_logo_html = (
 # ── Custom CSS ───────────────────────────────────────
 st.markdown("""
 <style>
-.stApp { background-color: #0f1117; }
+/* ══ 다크모드 (기본) ══ */
+@media (prefers-color-scheme: dark) {
+    .stApp { background-color: #0f1117 !important; }
 
+    .airs-header {
+        background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%) !important;
+        border-bottom: 2px solid #00d4ff !important;
+    }
+    .airs-title p { color: #8892a4 !important; }
+    .airs-badge {
+        background: rgba(0,212,255,0.1) !important;
+        border: 1px solid rgba(0,212,255,0.3) !important;
+        color: #00d4ff !important;
+    }
+    .step-card {
+        background: linear-gradient(135deg, #1a1f2e, #141820) !important;
+        border: 1px solid #2a3040 !important;
+    }
+    .step-title { color: #e8eaf0 !important; }
+    .tag-code {
+        color: #00d4ff !important;
+        background: rgba(0,212,255,0.08) !important;
+    }
+    .tag-name { color: #c8d0dc !important; }
+    .tag-vr { color: #8892a4 !important; background: #1e2535 !important; }
+    .tag-row { border-bottom: 1px solid #1e2535 !important; }
+    .sidebar-section-title { color: #00d4ff !important; border-bottom: 1px solid #2a3040 !important; }
+    .how-step-text { color: #c8d0dc !important; }
+    .note-item { color: #c8d0dc !important; }
+    .mode-label { color: #8892a4 !important; }
+    .mode-label::after { background: #2a3040 !important; }
+}
+
+/* ══ 라이트모드 ══ */
+@media (prefers-color-scheme: light) {
+    .stApp { background-color: #f0f4f8 !important; }
+
+    .airs-header {
+        background: linear-gradient(135deg, #ffffff 0%, #e8f0fe 100%) !important;
+        border-bottom: 2px solid #0066ff !important;
+    }
+    .airs-title p { color: #5a6a7a !important; }
+    .airs-badge {
+        background: rgba(0,102,255,0.1) !important;
+        border: 1px solid rgba(0,102,255,0.3) !important;
+        color: #0066ff !important;
+    }
+    .step-card {
+        background: linear-gradient(135deg, #ffffff, #f5f8ff) !important;
+        border: 1px solid #d0d8e8 !important;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important;
+    }
+    .step-title { color: #1a2030 !important; }
+    .tag-code {
+        color: #0055cc !important;
+        background: rgba(0,102,255,0.08) !important;
+    }
+    .tag-name { color: #2a3a4a !important; }
+    .tag-vr { color: #5a6a7a !important; background: #e8eef8 !important; }
+    .tag-row { border-bottom: 1px solid #d8e0f0 !important; }
+    .sidebar-section-title { color: #0066ff !important; border-bottom: 1px solid #d0d8e8 !important; }
+    .how-step-text { color: #3a4a5a !important; }
+    .note-item { color: #3a4a5a !important; }
+    .mode-label { color: #5a6a7a !important; }
+    .mode-label::after { background: #d0d8e8 !important; }
+    .success-banner {
+        background: linear-gradient(135deg, rgba(0,180,80,0.1), rgba(0,150,60,0.08)) !important;
+        border: 1px solid rgba(0,180,80,0.3) !important;
+        color: #007a40 !important;
+    }
+}
+
+/* ══ 공통 ══ */
 .airs-header {
     display: flex; align-items: center; gap: 16px;
     padding: 20px 28px;
-    background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
-    border-bottom: 2px solid #00d4ff;
     margin-bottom: 32px;
     border-radius: 0 0 16px 16px;
 }
@@ -61,23 +130,16 @@ st.markdown("""
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     letter-spacing: 2px;
 }
-.airs-title p {
-    margin: 2px 0 0; font-size: 13px;
-    color: #8892a4; letter-spacing: 1px;
-}
+.airs-title p { margin: 2px 0 0; font-size: 13px; letter-spacing: 1px; }
 .airs-badge {
     margin-left: auto;
-    background: rgba(0,212,255,0.1);
-    border: 1px solid rgba(0,212,255,0.3);
-    color: #00d4ff; padding: 6px 14px;
+    padding: 6px 14px;
     border-radius: 20px; font-size: 12px;
     font-weight: 600; letter-spacing: 1px;
 }
 .step-card {
-    background: linear-gradient(135deg, #1a1f2e, #141820);
-    border: 1px solid #2a3040; border-radius: 16px;
+    border-radius: 16px;
     padding: 20px 24px; margin-bottom: 16px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
 }
 .step-header { display: flex; align-items: center; gap: 12px; }
 .step-number {
@@ -88,19 +150,16 @@ st.markdown("""
     font-weight: 800; font-size: 16px; color: white;
     box-shadow: 0 2px 12px rgba(0,212,255,0.4); flex-shrink: 0;
 }
-.step-title { font-size: 18px; font-weight: 700; color: #e8eaf0; margin: 0; }
+.step-title { font-size: 18px; font-weight: 700; margin: 0; }
 .success-banner {
-    background: linear-gradient(135deg, rgba(0,200,100,0.15), rgba(0,150,80,0.1));
-    border: 1px solid rgba(0,200,100,0.3);
     border-radius: 12px; padding: 14px 20px;
-    color: #00c864; font-weight: 600;
+    font-weight: 600;
     display: flex; align-items: center; gap: 10px; margin: 12px 0;
 }
 .sidebar-section-title {
-    font-size: 12px; font-weight: 700; color: #00d4ff;
+    font-size: 12px; font-weight: 700;
     letter-spacing: 1px; text-transform: uppercase;
     margin-bottom: 10px; padding-bottom: 6px;
-    border-bottom: 1px solid #2a3040;
 }
 .how-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
 .how-step-num {
@@ -110,32 +169,31 @@ st.markdown("""
     display: flex; align-items: center; justify-content: center;
     font-size: 11px; font-weight: 700; color: white;
 }
-.how-step-text { font-size: 13px; color: #c8d0dc; line-height: 1.5; }
+.how-step-text { font-size: 13px; line-height: 1.5; }
 .mode-label {
-    font-size: 11px; font-weight: 700; color: #8892a4;
+    font-size: 11px; font-weight: 700;
     letter-spacing: 1px; text-transform: uppercase;
     margin: 12px 0 6px; display: flex; align-items: center; gap: 6px;
 }
-.mode-label::after { content: ''; flex: 1; height: 1px; background: #2a3040; }
+.mode-label::after { content: ''; flex: 1; height: 1px; }
 .note-item {
     display: flex; align-items: flex-start; gap: 8px;
-    margin-bottom: 8px; font-size: 13px; color: #c8d0dc;
+    margin-bottom: 8px; font-size: 13px;
 }
 .note-icon { font-size: 14px; flex-shrink: 0; }
 .tag-row {
     display: flex; align-items: center; gap: 6px;
-    padding: 5px 0; border-bottom: 1px solid #1e2535;
+    padding: 5px 0;
 }
 .tag-code {
-    font-family: monospace; font-size: 11px; color: #00d4ff;
-    background: rgba(0,212,255,0.08); padding: 2px 6px;
+    font-family: monospace; font-size: 11px;
+    padding: 2px 6px;
     border-radius: 4px; min-width: 100px; flex-shrink: 0;
 }
-.tag-name { font-size: 12px; color: #c8d0dc; flex: 1; }
+.tag-name { font-size: 12px; flex: 1; }
 .tag-vr {
-    font-size: 11px; color: #8892a4; background: #1e2535;
-    padding: 1px 5px; border-radius: 3px;
-    font-family: monospace; flex-shrink: 0;
+    font-size: 11px; padding: 1px 5px;
+    border-radius: 3px; font-family: monospace; flex-shrink: 0;
 }
 </style>
 """, unsafe_allow_html=True)
