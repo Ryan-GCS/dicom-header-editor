@@ -3,6 +3,7 @@ import pydicom
 import pandas as pd
 import io
 import zipfile
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -80,57 +81,81 @@ def apply_modifications_to_ds(ds, modifications: dict):
     ds_copy.save_as(output, write_like_original=True)
     return output.getvalue(), results
 
-def is_dicom_file(filename: str, file_bytes: bytes) -> bool:
-    ext = Path(filename).suffix.lower()
-    if ext in [".dcm", ".ima", ".dicom"]:
-        return True
-    if len(file_bytes) > 132 and file_bytes[128:132] == b"DICM":
-        return True
-    return False
-
 def process_zip(zip_bytes: bytes, modifications: dict):
     input_zip  = zipfile.ZipFile(io.BytesIO(zip_bytes))
     output_buf = io.BytesIO()
     output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
+
     all_results   = []
     success_count = 0
     skip_count    = 0
     error_count   = 0
-    file_list    = [f for f in input_zip.namelist() if not f.endswith("/")]
-    total        = len(file_list)
+
+    file_list = [f for f in input_zip.namelist() if not f.endswith("/")]
+    total     = len(file_list)
+
     progress_bar = st.progress(0, text="Processing files...")
+    status_box   = st.empty()
+
     for idx, filename in enumerate(file_list):
         file_bytes = input_zip.read(filename)
-        if not is_dicom_file(filename, file_bytes):
+        ext        = Path(filename).suffix.lower()
+
+        skip_exts = [".jpg", ".jpeg", ".png", ".gif", ".bmp",
+                     ".txt", ".xml", ".json", ".pdf", ".zip"]
+        if ext in skip_exts:
             output_zip.writestr(filename, file_bytes)
             skip_count += 1
             progress_bar.progress(
                 (idx + 1) / total,
-                text=f"Skipped (non-DICOM): {filename}"
+                text=f"⏭️ Skipped: {filename}"
             )
             continue
+
         try:
-            ds = parse_dicom(file_bytes)
+            ds = pydicom.dcmread(io.BytesIO(file_bytes), force=True)
+            if len(ds) < 3:
+                output_zip.writestr(filename, file_bytes)
+                skip_count += 1
+                progress_bar.progress(
+                    (idx + 1) / total,
+                    text=f"⏭️ Skipped (not DICOM): {filename}"
+                )
+                continue
+
             modified_bytes, results = apply_modifications_to_ds(ds, modifications)
             for r in results:
                 r["File"] = filename
             all_results.extend(results)
+
             output_zip.writestr(filename, modified_bytes)
             success_count += 1
+            status_box.info(f"✅ ({idx+1}/{total}) {filename}")
             progress_bar.progress(
                 (idx + 1) / total,
                 text=f"Processing ({idx+1}/{total}): {filename}"
             )
+
         except Exception as e:
             error_count += 1
             all_results.append({
-                "File": filename, "Tag": "-", "Keyword": "-",
-                "Before": "-", "After": "-",
-                "Status": f"❌ Failed to read: {e}"
+                "File":    filename,
+                "Tag":     "-",
+                "Keyword": "-",
+                "Before":  "-",
+                "After":   "-",
+                "Status":  f"❌ Failed: {e}"
             })
             output_zip.writestr(filename, file_bytes)
+            progress_bar.progress(
+                (idx + 1) / total,
+                text=f"❌ Error: {filename}"
+            )
+
     output_zip.close()
+    status_box.empty()
     progress_bar.progress(1.0, text="✅ All files processed!")
+
     summary = {
         "total":   total,
         "success": success_count,
@@ -197,31 +222,35 @@ else:
         zip_bytes = uploaded.read()
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             file_list = [f for f in zf.namelist() if not f.endswith("/")]
-            dcm_files = [
-                f for f in file_list
-                if Path(f).suffix.lower() in [".dcm", ".ima", ".dicom"]
-                or Path(f).suffix == ""
-            ]
+
         st.success(
             f"✅ ZIP loaded: `{uploaded.name}` — "
-            f"**{len(file_list)} total files** / "
-            f"**{len(dcm_files)} DICOM files** detected"
+            f"**{len(file_list)} files** detected"
         )
+
         with st.expander("📂 View files in ZIP", expanded=False):
             st.dataframe(
                 pd.DataFrame({"File": file_list}),
                 use_container_width=True,
                 hide_index=True
             )
+
         first_dcm_bytes = None
+        first_dcm_name  = None
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             for fname in zf.namelist():
                 if fname.endswith("/"):
                     continue
                 fb = zf.read(fname)
-                if is_dicom_file(fname, fb):
-                    first_dcm_bytes = fb
-                    break
+                try:
+                    ds_test = pydicom.dcmread(io.BytesIO(fb), force=True)
+                    if len(ds_test) >= 3:
+                        first_dcm_bytes = fb
+                        first_dcm_name  = fname
+                        break
+                except Exception:
+                    continue
+
         if first_dcm_bytes:
             st.session_state.ds             = parse_dicom(first_dcm_bytes)
             st.session_state.tags_df        = extract_tags(st.session_state.ds)
@@ -233,7 +262,7 @@ else:
             st.session_state.mod_results    = None
             st.session_state.summary        = None
             st.session_state.queue_msg      = None
-            st.info("🔍 Tag list loaded from the first DICOM file in the ZIP.")
+            st.info(f"🔍 Tag list loaded from: `{first_dcm_name}`")
         else:
             st.error("❌ No valid DICOM files found in the ZIP.")
 
@@ -254,11 +283,14 @@ if st.session_state.ds is not None:
     df = pd.DataFrame(st.session_state.tags_df)
     if not show_private:
         df = df[df["Private"] == False]
+
+    # ✅ regex 경고 수정: re.escape 로 특수문자 이스케이프
     if search:
+        escaped = re.escape(search)
         mask = (
-            df["Keyword"].str.contains(search, case=False, na=False) |
-            df["Tag"].str.contains(search, case=False, na=False) |
-            df["Value"].str.contains(search, case=False, na=False)
+            df["Keyword"].str.contains(escaped, case=False, na=False, regex=True) |
+            df["Tag"].str.contains(escaped, case=False, na=False, regex=True) |
+            df["Value"].str.contains(escaped, case=False, na=False, regex=True)
         )
         df = df[mask]
 
@@ -301,7 +333,6 @@ if st.session_state.ds is not None:
             st.session_state.summary        = None
             st.session_state.queue_msg      = ("success", f"✅ Queued: {selected_tag}  →  {val}")
 
-    # 메시지 출력
     if st.session_state.queue_msg:
         msg_type, msg_text = st.session_state.queue_msg
         if msg_type == "success":
@@ -409,26 +440,28 @@ if st.session_state.ds is not None:
             st.info("All DICOM files in the ZIP will be modified with the same tag changes.")
 
             if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
-                with st.spinner("Processing ZIP..."):
-                    modified_zip, all_results, summary = process_zip(
-                        st.session_state.zip_bytes,
-                        st.session_state.modifications
-                    )
-                    st.session_state.modified_bytes = modified_zip
-                    st.session_state.mod_results    = all_results
-                    st.session_state.summary        = summary
+                modified_zip, all_results, summary = process_zip(
+                    st.session_state.zip_bytes,
+                    st.session_state.modifications
+                )
+                st.session_state.modified_bytes = modified_zip
+                st.session_state.mod_results    = all_results
+                st.session_state.summary        = summary
 
             if st.session_state.summary:
-                summary = st.session_state.summary
+                s = st.session_state.summary
                 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-                col_s1.metric("Total Files",  summary["total"])
-                col_s2.metric("✅ Processed", summary["success"])
-                col_s3.metric("⏭️ Skipped",   summary["skipped"])
-                col_s4.metric("❌ Errors",     summary["errors"])
+                col_s1.metric("📁 Total Files", s["total"])
+                col_s2.metric("✅ Processed",   s["success"])
+                col_s3.metric("⏭️ Skipped",     s["skipped"])
+                col_s4.metric("❌ Errors",       s["errors"])
+
+                if s["success"] == 0:
+                    st.error("❌ No DICOM files were processed! Report를 확인해주세요.")
 
             if st.session_state.mod_results:
                 st.subheader("📊 Modification Report")
-                with st.expander("View full report", expanded=False):
+                with st.expander("View full report", expanded=True):
                     st.dataframe(
                         pd.DataFrame(st.session_state.mod_results),
                         use_container_width=True,
@@ -443,7 +476,8 @@ if st.session_state.ds is not None:
                     data=st.session_state.modified_bytes,
                     file_name=zip_name,
                     mime="application/zip",
-                    use_container_width=True
+                    use_container_width=True,
+                    type="primary"
                 )
 
 
@@ -455,24 +489,23 @@ with st.sidebar:
     1. Select *Single DICOM* mode
     2. Upload a `.dcm` file
     3. Select tag → Enter new value
-    4. 📝 Queue Change → 🚀 Apply Changes → ⬇️ Download
+    4. Queue Change → Apply → Download
 
     **Batch (ZIP)**
     1. Select *Multiple DICOMs* mode
     2. Upload a `.zip` containing DICOM files
     3. Select tag → Enter new value
-    4. 📝 Queue Change → 🚀 Apply to All → ⬇️ Download ZIP
+    4. Queue Change → Apply to All → Download ZIP
     """)
 
     st.divider()
 
-    st.header("⚠️ Notes")
-    st.warning("""
-    - Original files are never modified
-    - Tags are applied to ALL DICOM files in ZIP
-    - Do not upload real patient data (PHI)
-      to public deployments
-    """)
+    st.header("Notes")
+    st.warning(
+        "Original files are never modified.\n\n"
+        "Tags are applied to ALL DICOM files in ZIP.\n\n"
+        "Do not upload real patient data (PHI) to public deployments."
+    )
 
     st.divider()
 
@@ -498,7 +531,7 @@ with st.sidebar:
 
     with tag_tab2:
         st.caption("AIRS Medical — DCS Upload Tags")
-        st.caption("Group: **00E1** | Creator: AIRS Medical")
+        st.caption("Group: 00E1 | Creator: AIRS Medical")
         upload_tags = [
             {"Tag": "(00E1,1010)", "Name": "StudyId",              "VR": "LO", "Note": ""},
             {"Tag": "(00E1,1011)", "Name": "SeriesId",             "VR": "LO", "Note": ""},
@@ -517,8 +550,7 @@ with st.sidebar:
              "Note": "MIPComposing/RadialMIP\nParallelRendering"},
             {"Tag": "(00E1,1038)", "Name": "RadialAngle",          "VR": "IS", "Note": "MIPComposing, RadialMIP"},
             {"Tag": "(00E1,1039)", "Name": "Zoom",                 "VR": "LO", "Note": "RadialMIP, ParallelRendering"},
-            {"Tag": "(00E1,1040)", "Name": "SliceOrder",           "VR": "LO",
-             "Note": "RadialMIP / ParallelRendering"},
+            {"Tag": "(00E1,1040)", "Name": "SliceOrder",           "VR": "LO", "Note": "RadialMIP / ParallelRendering"},
             {"Tag": "(00E1,1041)", "Name": "Orientation",          "VR": "LO",
              "Note": "ParallelRendering\nRadialMIP (Radial Axis)"},
             {"Tag": "(00E1,1042)", "Name": "Gap",                  "VR": "LO", "Note": "ParallelRendering"},
@@ -540,20 +572,20 @@ with st.sidebar:
 
     with tag_tab3:
         st.caption("AIRS Medical — Worker Recon Output Tags")
-        st.caption("Group: **00E1** | Creator: AIRS Medical")
+        st.caption("Group: 00E1 | Creator: AIRS Medical")
         recon_tags = [
             {"Tag": "(00E1,1020)", "Name": "InputSnr",          "VR": "FL", "Note": ""},
             {"Tag": "(00E1,1021)", "Name": "OutputSnr",         "VR": "FL", "Note": ""},
             {"Tag": "(00E1,1022)", "Name": "DenoisingLevel",    "VR": "LO",
-             "Note": "e.g. '4: 3.0'\n→ 4: selected level\n→ 3.0: relative_snr"},
+             "Note": "e.g. 4: 3.0\n→ 4: selected level\n→ 3.0: relative_snr"},
             {"Tag": "(00E1,1023)", "Name": "Sharpness",         "VR": "FL", "Note": ""},
             {"Tag": "(00E1,1024)", "Name": "ModelPath",         "VR": "OB", "Note": ""},
             {"Tag": "(00E1,1025)", "Name": "ModelHeader",       "VR": "LO", "Note": ""},
             {"Tag": "(00E1,1026)", "Name": "ModelVersion",      "VR": "LO", "Note": ""},
             {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold", "VR": "LO",
-             "Note": "After recon: applied value\nappended after ':'"},
+             "Note": "After recon: value after ':'"},
             {"Tag": "(00E1,1035)", "Name": "BValue",            "VR": "LO",
-             "Note": "After recon: applied B-values\nfor ADC images"},
+             "Note": "After recon: applied B-values"},
         ]
         for t in recon_tags:
             col_t, col_n, col_v = st.columns([2, 3, 1])
