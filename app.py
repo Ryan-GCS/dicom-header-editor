@@ -38,10 +38,9 @@ sidebar_logo_html = (
 # ── Custom CSS ───────────────────────────────────────
 st.markdown("""
 <style>
-/* ══ 다크모드 (기본) ══ */
+/* ══ 다크모드 ══ */
 @media (prefers-color-scheme: dark) {
     .stApp { background-color: #0f1117 !important; }
-
     .airs-header {
         background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%) !important;
         border-bottom: 2px solid #00d4ff !important;
@@ -64,17 +63,24 @@ st.markdown("""
     .tag-name { color: #c8d0dc !important; }
     .tag-vr { color: #8892a4 !important; background: #1e2535 !important; }
     .tag-row { border-bottom: 1px solid #1e2535 !important; }
-    .sidebar-section-title { color: #00d4ff !important; border-bottom: 1px solid #2a3040 !important; }
+    .sidebar-section-title {
+        color: #00d4ff !important;
+        border-bottom: 1px solid #2a3040 !important;
+    }
     .how-step-text { color: #c8d0dc !important; }
     .note-item { color: #c8d0dc !important; }
     .mode-label { color: #8892a4 !important; }
     .mode-label::after { background: #2a3040 !important; }
+    .success-banner {
+        background: linear-gradient(135deg, rgba(0,200,100,0.15), rgba(0,150,80,0.1)) !important;
+        border: 1px solid rgba(0,200,100,0.3) !important;
+        color: #00c864 !important;
+    }
 }
 
 /* ══ 라이트모드 ══ */
 @media (prefers-color-scheme: light) {
     .stApp { background-color: #f0f4f8 !important; }
-
     .airs-header {
         background: linear-gradient(135deg, #ffffff 0%, #e8f0fe 100%) !important;
         border-bottom: 2px solid #0066ff !important;
@@ -98,7 +104,10 @@ st.markdown("""
     .tag-name { color: #2a3a4a !important; }
     .tag-vr { color: #5a6a7a !important; background: #e8eef8 !important; }
     .tag-row { border-bottom: 1px solid #d8e0f0 !important; }
-    .sidebar-section-title { color: #0066ff !important; border-bottom: 1px solid #d0d8e8 !important; }
+    .sidebar-section-title {
+        color: #0066ff !important;
+        border-bottom: 1px solid #d0d8e8 !important;
+    }
     .how-step-text { color: #3a4a5a !important; }
     .note-item { color: #3a4a5a !important; }
     .mode-label { color: #5a6a7a !important; }
@@ -457,7 +466,8 @@ if st.session_state.ds is not None:
 
     col_a, col_b = st.columns([2, 3])
     with col_a:
-       tag_options = [
+        # ── Tag + Keyword 함께 표시 ──
+        tag_options = [
             f"{row['Tag']}  {row['Keyword']}"
             for _, row in df.iterrows()
         ]
@@ -466,6 +476,7 @@ if st.session_state.ds is not None:
             tag_options,
             key="tag_select"
         )
+        # 실제 tag 코드만 추출
         selected_tag = selected_option.split("  ")[0] if selected_option else None
 
     with col_b:
@@ -475,7 +486,6 @@ if st.session_state.ds is not None:
         else:
             default_val = ""
         new_value = st.text_input("New value", value=default_val)
-
 
     if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
         val = new_value.strip()
@@ -738,6 +748,6 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     <div style="text-align:center;font-size:11px;color:#4a5568;padding:8px 0;">
-        © 2026 AIRS Medical Inc.<br>All rights reserved.<br> Global Technical Support
+        © 2026 AIRS Medical Inc.<br>All rights reserved.<br>Global Technical Suppport
     </div>
     """, unsafe_allow_html=True)
