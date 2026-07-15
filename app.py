@@ -125,7 +125,10 @@ st.markdown("""
 # ── AIRS Header ──────────────────────────────────────
 st.markdown("""
 <div class="airs-header">
-    <div class="airs-logo-box">🫁</div>
+    <div class="airs-logo-box">
+        <img src="https://airsmedical.com/wp-content/uploads/2021/03/AIRS-Medical-Logo.png" 
+             style="width:44px; height:44px; object-fit:contain; border-radius:8px;">
+    </div>
     <div class="airs-title">
         <h1>AIRS MEDICAL</h1>
         <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
@@ -133,7 +136,6 @@ st.markdown("""
     <div class="airs-badge">v2.0</div>
 </div>
 """, unsafe_allow_html=True)
-
 
 # ── Utility Functions ────────────────────────────────
 def parse_dicom(file_bytes):
