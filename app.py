@@ -439,14 +439,23 @@ if st.session_state.ds is not None:
         else:
             st.info("All DICOM files in the ZIP will be modified with the same tag changes.")
 
-            if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
-                modified_zip, all_results, summary = process_zip(
-                    st.session_state.zip_bytes,
-                    st.session_state.modifications
-                )
+            apply_clicked = st.button(
+                "🚀 Apply to All & Create ZIP",
+                type="primary",
+                use_container_width=True
+            )
+
+            if apply_clicked:
+                with st.spinner("Processing ZIP..."):
+                    modified_zip, all_results, summary = process_zip(
+                        st.session_state.zip_bytes,
+                        st.session_state.modifications
+                    )
+                # ✅ spinner 밖에서 저장 (rerun 방지)
                 st.session_state.modified_bytes = modified_zip
                 st.session_state.mod_results    = all_results
                 st.session_state.summary        = summary
+                st.rerun()  # ✅ 저장 후 명시적 rerun
 
             if st.session_state.summary:
                 s = st.session_state.summary
@@ -457,7 +466,11 @@ if st.session_state.ds is not None:
                 col_s4.metric("❌ Errors",       s["errors"])
 
                 if s["success"] == 0:
-                    st.error("❌ No DICOM files were processed! Report를 확인해주세요.")
+                    st.error(
+                        "❌ No DICOM files were processed!\n\n"
+                        "ZIP 안의 파일이 DICOM으로 인식되지 않았습니다.\n"
+                        "아래 Report를 확인해주세요."
+                    )
 
             if st.session_state.mod_results:
                 st.subheader("📊 Modification Report")
@@ -469,8 +482,10 @@ if st.session_state.ds is not None:
                         hide_index=True
                     )
 
-            if st.session_state.modified_bytes:
+            # ✅ Download 버튼 - summary 있을 때만 표시
+            if st.session_state.modified_bytes and st.session_state.summary:
                 zip_name = st.session_state.filename.replace(".zip", "_modified.zip")
+                st.success("✅ ZIP ready! Click below to download.")
                 st.download_button(
                     label="⬇️ Download Modified ZIP",
                     data=st.session_state.modified_bytes,
@@ -479,7 +494,6 @@ if st.session_state.ds is not None:
                     use_container_width=True,
                     type="primary"
                 )
-
 
 # ── Sidebar ──────────────────────────────────────────
 with st.sidebar:
