@@ -308,7 +308,7 @@ if st.session_state.ds is not None:
     with col_c:
         st.write("")
         st.write("")
-        if st.button("➕ Add", use_container_width=True, key="add_button"):
+        if st.button("📝 Queue Change", use_container_width=True, key="add_button"):
             if selected_tag:
                 input_key    = f"new_value_input_{selected_tag}"
                 value_to_add = st.session_state.get(input_key, "")
@@ -318,7 +318,7 @@ if st.session_state.ds is not None:
                     st.session_state.modified_bytes = None
                     st.session_state.mod_results    = None
                     st.session_state.summary        = None
-                    st.success(f"✅ Added: {selected_tag} → {value_to_add}")
+                    st.success(f"✅ Queued: {selected_tag} → {value_to_add}")
                     st.rerun()
                 else:
                     st.warning("⚠️ Please enter a new value.")
