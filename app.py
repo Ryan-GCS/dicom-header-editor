@@ -291,7 +291,8 @@ if st.session_state.ds is not None:
 
     # Queue Change 버튼 (전체 너비)
     if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
-        val = st.session_state.get("new_value_input", "").strip()
+        # ✅ session_state["new_value_input"] 대신 변수 직접 사용
+        val = new_value.strip() if new_value else ""
         if not selected_tag:
             st.session_state.queue_msg = ("error", "⚠️ Please select a tag.")
         elif not val:
