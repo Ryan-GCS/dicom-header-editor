@@ -98,7 +98,7 @@ def process_zip(zip_bytes: bytes, modifications: dict):
     skip_exts = {".jpg", ".jpeg", ".png", ".gif", ".bmp",
                  ".txt", ".xml", ".json", ".pdf", ".zip"}
 
-    for idx, filename in enumerate(file_list):
+    for filename in file_list:
         file_bytes = input_zip.read(filename)
         ext        = Path(filename).suffix.lower()
 
@@ -170,61 +170,68 @@ upload_mode = st.radio(
 if upload_mode == "Single DICOM (.dcm)":
     uploaded = st.file_uploader("Upload a DICOM file", type=["dcm", "DCM"])
     if uploaded:
-        file_bytes = uploaded.read()
-        st.session_state.ds             = parse_dicom(file_bytes)
-        st.session_state.tags_df        = extract_tags(st.session_state.ds)
-        st.session_state.filename       = uploaded.name
-        st.session_state.upload_mode    = "single"
-        st.session_state.zip_bytes      = None
-        st.session_state.modifications  = {}
-        st.session_state.modified_bytes = None
-        st.session_state.mod_results    = None
-        st.session_state.summary        = None
-        st.session_state.queue_msg      = None
-        st.success(f"Loaded: {uploaded.name} — {len(st.session_state.tags_df)} tags found")
-
-else:
-    uploaded = st.file_uploader("Upload a ZIP file containing DICOM files", type=["zip"])
-    if uploaded:
-        zip_bytes = uploaded.read()
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-            file_list = [f for f in zf.namelist() if not f.endswith("/")]
-
-        st.success(f"ZIP loaded: {uploaded.name} — {len(file_list)} files detected")
-
-        with st.expander("View files in ZIP", expanded=False):
-            st.dataframe(pd.DataFrame({"File": file_list}), hide_index=True)
-
-        first_dcm_bytes = None
-        first_dcm_name  = None
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-            for fname in zf.namelist():
-                if fname.endswith("/"):
-                    continue
-                fb = zf.read(fname)
-                try:
-                    ds_test = pydicom.dcmread(io.BytesIO(fb), force=True)
-                    if len(ds_test) >= 3:
-                        first_dcm_bytes = fb
-                        first_dcm_name  = fname
-                        break
-                except Exception:
-                    continue
-
-        if first_dcm_bytes:
-            st.session_state.ds             = parse_dicom(first_dcm_bytes)
+        # ✅ 파일명이 바뀔 때만 초기화
+        if uploaded.name != st.session_state.filename:
+            file_bytes = uploaded.read()
+            st.session_state.ds             = parse_dicom(file_bytes)
             st.session_state.tags_df        = extract_tags(st.session_state.ds)
-            st.session_state.zip_bytes      = zip_bytes
             st.session_state.filename       = uploaded.name
-            st.session_state.upload_mode    = "zip"
+            st.session_state.upload_mode    = "single"
+            st.session_state.zip_bytes      = None
             st.session_state.modifications  = {}
             st.session_state.modified_bytes = None
             st.session_state.mod_results    = None
             st.session_state.summary        = None
             st.session_state.queue_msg      = None
-            st.info(f"Tag list loaded from: {first_dcm_name}")
+            st.success(f"Loaded: {uploaded.name} — {len(st.session_state.tags_df)} tags found")
         else:
-            st.error("No valid DICOM files found in the ZIP.")
+            st.success(f"Loaded: {uploaded.name} — {len(st.session_state.tags_df)} tags found")
+
+else:
+    uploaded = st.file_uploader("Upload a ZIP file containing DICOM files", type=["zip"])
+    if uploaded:
+        # ✅ 파일명이 바뀔 때만 초기화
+        if uploaded.name != st.session_state.filename:
+            zip_bytes = uploaded.read()
+            with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+                file_list = [f for f in zf.namelist() if not f.endswith("/")]
+
+            with st.expander("View files in ZIP", expanded=False):
+                st.dataframe(pd.DataFrame({"File": file_list}), hide_index=True)
+
+            first_dcm_bytes = None
+            first_dcm_name  = None
+            with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+                for fname in zf.namelist():
+                    if fname.endswith("/"):
+                        continue
+                    fb = zf.read(fname)
+                    try:
+                        ds_test = pydicom.dcmread(io.BytesIO(fb), force=True)
+                        if len(ds_test) >= 3:
+                            first_dcm_bytes = fb
+                            first_dcm_name  = fname
+                            break
+                    except Exception:
+                        continue
+
+            if first_dcm_bytes:
+                st.session_state.ds             = parse_dicom(first_dcm_bytes)
+                st.session_state.tags_df        = extract_tags(st.session_state.ds)
+                st.session_state.zip_bytes      = zip_bytes
+                st.session_state.filename       = uploaded.name
+                st.session_state.upload_mode    = "zip"
+                st.session_state.modifications  = {}
+                st.session_state.modified_bytes = None
+                st.session_state.mod_results    = None
+                st.session_state.summary        = None
+                st.session_state.queue_msg      = None
+                st.success(f"ZIP loaded: {uploaded.name} — {len(file_list)} files")
+                st.info(f"Tag list loaded from: {first_dcm_name}")
+            else:
+                st.error("No valid DICOM files found in the ZIP.")
+        else:
+            st.success(f"ZIP loaded: {st.session_state.filename}")
 
 
 # ── STEP 2: Tag Viewer & Editor ──────────────────────
@@ -338,15 +345,6 @@ if st.session_state.ds is not None:
     # ── STEP 3: Apply & Download ─────────────────────
     st.header("③ Apply & Download")
 
-    # ✅ 디버그 패널
-    with st.expander("🔍 Debug Info", expanded=True):
-        st.write(f"- **upload_mode**: `{st.session_state.upload_mode}`")
-        st.write(f"- **filename**: `{st.session_state.filename}`")
-        st.write(f"- **zip_bytes**: `{'있음 (' + str(len(st.session_state.zip_bytes)) + ' bytes)' if st.session_state.zip_bytes else '없음 ❌'}`")
-        st.write(f"- **modifications**: `{st.session_state.modifications}`")
-        st.write(f"- **modified_bytes**: `{'있음 (' + str(len(st.session_state.modified_bytes)) + ' bytes)' if st.session_state.modified_bytes else '없음'}`")
-        st.write(f"- **summary**: `{st.session_state.summary}`")
-
     if not st.session_state.modifications:
         st.info("No modifications queued yet.")
     else:
@@ -382,22 +380,14 @@ if st.session_state.ds is not None:
             st.info("All DICOM files in the ZIP will be modified with the same tag changes.")
 
             if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
-                st.write("✅ 버튼 클릭 감지됨")
-
-                if st.session_state.zip_bytes is None:
-                    st.error("❌ zip_bytes가 None! 파일을 다시 업로드해주세요.")
-                else:
-                    st.write(f"zip_bytes 크기: {len(st.session_state.zip_bytes)}")
-                    with st.spinner("Processing ZIP..."):
-                        result_bytes, all_results, summary = process_zip(
-                            st.session_state.zip_bytes,
-                            st.session_state.modifications
-                        )
-                    st.write(f"✅ 처리 완료! result_bytes: {len(result_bytes)} bytes")
-                    st.session_state.modified_bytes = result_bytes
-                    st.session_state.mod_results    = all_results
-                    st.session_state.summary        = summary
-                    st.write(f"summary: {summary}")
+                with st.spinner("Processing ZIP..."):
+                    result_bytes, all_results, summary = process_zip(
+                        st.session_state.zip_bytes,
+                        st.session_state.modifications
+                    )
+                st.session_state.modified_bytes = result_bytes
+                st.session_state.mod_results    = all_results
+                st.session_state.summary        = summary
 
             if st.session_state.summary is not None:
                 s = st.session_state.summary
@@ -430,10 +420,6 @@ if st.session_state.ds is not None:
                     use_container_width=True,
                     type="primary"
                 )
-
-        else:
-            # ✅ upload_mode가 예상과 다를 때 표시
-            st.error(f"❌ upload_mode가 '{st.session_state.upload_mode}' 입니다. 파일을 다시 업로드해주세요.")
 
 
 # ── Sidebar ──────────────────────────────────────────
