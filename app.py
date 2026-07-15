@@ -42,7 +42,6 @@ def extract_tags(ds) -> list:
     return rows
 
 def apply_modifications_to_ds(ds, modifications: dict):
-    """단일 Dataset에 수정사항 적용 → (modified_bytes, results)"""
     ds_copy = deepcopy(ds)
     results = []
 
@@ -87,40 +86,31 @@ def apply_modifications_to_ds(ds, modifications: dict):
     return output.getvalue(), results
 
 def is_dicom_file(filename: str, file_bytes: bytes) -> bool:
-    """DICOM 파일 여부 확인 (확장자 + 매직바이트)"""
     ext = Path(filename).suffix.lower()
     if ext in [".dcm", ".ima", ".dicom"]:
         return True
-    # 확장자 없는 경우 매직바이트로 확인 (DICM at offset 128)
     if len(file_bytes) > 132 and file_bytes[128:132] == b"DICM":
         return True
     return False
 
 def process_zip(zip_bytes: bytes, modifications: dict):
-    """
-    ZIP 내 모든 DICOM 파일에 수정사항 적용
-    → 수정된 파일들을 새 ZIP으로 반환
-    """
     input_zip  = zipfile.ZipFile(io.BytesIO(zip_bytes))
     output_buf = io.BytesIO()
     output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
 
-    all_results  = []
+    all_results   = []
     success_count = 0
     skip_count    = 0
     error_count   = 0
 
-    file_list = [f for f in input_zip.namelist() if not f.endswith("/")]
-
+    file_list    = [f for f in input_zip.namelist() if not f.endswith("/")]
+    total        = len(file_list)
     progress_bar = st.progress(0, text="Processing files...")
-    total = len(file_list)
 
     for idx, filename in enumerate(file_list):
         file_bytes = input_zip.read(filename)
 
-        # DICOM 파일 여부 확인
         if not is_dicom_file(filename, file_bytes):
-            # DICOM 아닌 파일은 그대로 복사
             output_zip.writestr(filename, file_bytes)
             skip_count += 1
             progress_bar.progress(
@@ -133,12 +123,10 @@ def process_zip(zip_bytes: bytes, modifications: dict):
             ds = parse_dicom(file_bytes)
             modified_bytes, results = apply_modifications_to_ds(ds, modifications)
 
-            # 결과에 파일명 추가
             for r in results:
                 r["File"] = filename
             all_results.extend(results)
 
-            # 수정된 파일을 ZIP에 추가
             output_zip.writestr(filename, modified_bytes)
             success_count += 1
             progress_bar.progress(
@@ -153,7 +141,6 @@ def process_zip(zip_bytes: bytes, modifications: dict):
                 "Before": "-", "After": "-",
                 "Status": f"❌ Failed to read: {e}"
             })
-            # 실패한 파일은 원본 그대로 복사
             output_zip.writestr(filename, file_bytes)
 
     output_zip.close()
@@ -170,14 +157,15 @@ def process_zip(zip_bytes: bytes, modifications: dict):
 
 # ── Session State Init ───────────────────────────────
 defaults = {
-    "ds":             None,
-    "tags_df":        None,
-    "modifications":  {},
-    "filename":       "",
-    "modified_bytes": None,
-    "mod_results":    None,
-    "upload_mode":    None,   # "single" | "zip"
-    "zip_bytes":      None,
+    "ds":              None,
+    "tags_df":         None,
+    "modifications":   {},
+    "filename":        "",
+    "modified_bytes":  None,
+    "mod_results":     None,
+    "upload_mode":     None,
+    "zip_bytes":       None,
+    "summary":         None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -209,12 +197,13 @@ if upload_mode == "Single DICOM (.dcm)":
         st.session_state.modifications  = {}
         st.session_state.modified_bytes = None
         st.session_state.mod_results    = None
+        st.session_state.summary        = None
         st.success(
             f"✅ Loaded: `{uploaded.name}` — "
             f"{len(st.session_state.tags_df)} tags found"
         )
 
-else:  # ZIP
+else:
     uploaded = st.file_uploader(
         "Upload a ZIP file containing DICOM files",
         type=["zip"],
@@ -223,7 +212,6 @@ else:  # ZIP
     if uploaded:
         zip_bytes = uploaded.read()
 
-        # ZIP 내 파일 목록 미리보기
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             file_list = [f for f in zf.namelist() if not f.endswith("/")]
             dcm_files = [
@@ -245,7 +233,6 @@ else:  # ZIP
                 hide_index=True
             )
 
-        # 태그 미리보기용: ZIP 내 첫 번째 DICOM 읽기
         first_dcm_bytes = None
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             for fname in zf.namelist():
@@ -257,14 +244,15 @@ else:  # ZIP
                     break
 
         if first_dcm_bytes:
-            st.session_state.ds            = parse_dicom(first_dcm_bytes)
-            st.session_state.tags_df       = extract_tags(st.session_state.ds)
-            st.session_state.zip_bytes     = zip_bytes
-            st.session_state.filename      = uploaded.name
-            st.session_state.upload_mode   = "zip"
-            st.session_state.modifications = {}
+            st.session_state.ds             = parse_dicom(first_dcm_bytes)
+            st.session_state.tags_df        = extract_tags(st.session_state.ds)
+            st.session_state.zip_bytes      = zip_bytes
+            st.session_state.filename       = uploaded.name
+            st.session_state.upload_mode    = "zip"
+            st.session_state.modifications  = {}
             st.session_state.modified_bytes = None
-            st.session_state.mod_results   = None
+            st.session_state.mod_results    = None
+            st.session_state.summary        = None
             st.info("🔍 Tag list loaded from the first DICOM file in the ZIP.")
         else:
             st.error("❌ No valid DICOM files found in the ZIP.")
@@ -302,21 +290,38 @@ if st.session_state.ds is not None:
     col_a, col_b, col_c = st.columns([2, 3, 1])
     with col_a:
         tag_options  = df["Tag"].tolist()
-        selected_tag = st.selectbox("Select tag to edit", tag_options)
+        selected_tag = st.selectbox(
+            "Select tag to edit",
+            tag_options,
+            key="selected_tag_selectbox"
+        )
     with col_b:
         if selected_tag:
             current_val = df[df["Tag"] == selected_tag]["Value"].values[0]
             default_val = st.session_state.modifications.get(
                 selected_tag, current_val)
-            new_value = st.text_input("New value", value=default_val)
+            new_value = st.text_input(
+                "New value",
+                value=default_val,
+                key=f"new_value_input_{selected_tag}"
+            )
     with col_c:
         st.write("")
         st.write("")
-        if st.button("➕ Add", use_container_width=True):
-            if selected_tag and new_value is not None:
-                st.session_state.modifications[selected_tag] = new_value
-                st.session_state.modified_bytes = None
-                st.success(f"Added: {selected_tag}")
+        if st.button("➕ Add", use_container_width=True, key="add_button"):
+            if selected_tag:
+                input_key    = f"new_value_input_{selected_tag}"
+                value_to_add = st.session_state.get(input_key, "")
+
+                if value_to_add is not None and value_to_add != "":
+                    st.session_state.modifications[selected_tag] = value_to_add
+                    st.session_state.modified_bytes = None
+                    st.session_state.mod_results    = None
+                    st.session_state.summary        = None
+                    st.success(f"✅ Added: {selected_tag} → {value_to_add}")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Please enter a new value.")
 
     # ── Pending Modifications ────────────────────────
     if st.session_state.modifications:
@@ -329,8 +334,10 @@ if st.session_state.ds is not None:
             ori = df[df["Tag"] == tag]["Value"].values
             ori = ori[0] if len(ori) > 0 else "-"
             mod_data.append({
-                "Tag": tag, "Keyword": kw,
-                "Original": ori, "New Value": val
+                "Tag":      tag,
+                "Keyword":  kw,
+                "Original": ori,
+                "New Value": val
             })
 
         st.dataframe(
@@ -345,6 +352,7 @@ if st.session_state.ds is not None:
                 st.session_state.modifications  = {}
                 st.session_state.modified_bytes = None
                 st.session_state.mod_results    = None
+                st.session_state.summary        = None
                 st.rerun()
         with col_tag_del:
             tag_to_remove = st.selectbox(
@@ -355,6 +363,7 @@ if st.session_state.ds is not None:
             if st.button("❌ Remove Selected", use_container_width=True):
                 del st.session_state.modifications[tag_to_remove]
                 st.session_state.modified_bytes = None
+                st.session_state.mod_results    = None
                 st.rerun()
 
     # ── Full Tag Table ───────────────────────────────
@@ -423,13 +432,16 @@ if st.session_state.ds is not None:
                 )
                 st.session_state.modified_bytes = modified_zip
                 st.session_state.mod_results    = all_results
+                st.session_state.summary        = summary
 
-                # Summary
+            # Summary 메트릭 (버튼 클릭 후 유지)
+            if st.session_state.summary:
+                summary = st.session_state.summary
                 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-                col_s1.metric("Total Files",    summary["total"])
-                col_s2.metric("✅ Processed",   summary["success"])
-                col_s3.metric("⏭️ Skipped",     summary["skipped"])
-                col_s4.metric("❌ Errors",       summary["errors"])
+                col_s1.metric("Total Files",  summary["total"])
+                col_s2.metric("✅ Processed", summary["success"])
+                col_s3.metric("⏭️ Skipped",   summary["skipped"])
+                col_s4.metric("❌ Errors",     summary["errors"])
 
             if st.session_state.mod_results:
                 st.subheader("📊 Modification Report")
@@ -451,6 +463,7 @@ if st.session_state.ds is not None:
                     mime="application/zip",
                     use_container_width=True
                 )
+
 
 # ── Sidebar ──────────────────────────────────────────
 with st.sidebar:
@@ -481,12 +494,10 @@ with st.sidebar:
 
     st.divider()
 
-    # ── Common Tags ──────────────────────────────────
     st.header("🔧 Common Tags")
 
     tag_tab1, tag_tab2, tag_tab3 = st.tabs(["Standard", "AIRS Upload", "AIRS Recon"])
 
-    # ── Standard DICOM Tags ──────────────────────────
     with tag_tab1:
         st.caption("Standard DICOM Tags")
         standard_tags = [
@@ -504,62 +515,56 @@ with st.sidebar:
             with col_k:
                 st.caption(t["Keyword"])
 
-    # ── AIRS Medical Upload Tags (DCS → Worker) ──────
     with tag_tab2:
-        st.caption("AIRS Medical Private Tags — DCS Upload")
+        st.caption("AIRS Medical — DCS Upload Tags")
         st.caption("Group: **00E1** | Creator: AIRS Medical")
-
         upload_tags = [
-            {"Tag": "(00E1,1010)", "Name": "StudyId",            "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1011)", "Name": "SeriesId",           "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1012)", "Name": "ImageId",            "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1014)", "Name": "UploadId",           "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1015)", "Name": "DeviceId",           "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1030)", "Name": "DispatchUnitId",     "VR": "LO", "Note": ""},
-            {"Tag": "(00E1,1031)", "Name": "PostProcessingType", "VR": "LO",
-             "Note": "MIP / MPR / MinIP / ADC / EXP_ADC\nMIPComposing / RadialMIP / ParallelMIP\nParallelMPR / ParallelMinIP / Calculated_bvalue"},
+            {"Tag": "(00E1,1010)", "Name": "StudyId",             "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1011)", "Name": "SeriesId",            "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1012)", "Name": "ImageId",             "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1014)", "Name": "UploadId",            "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1015)", "Name": "DeviceId",            "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1030)", "Name": "DispatchUnitId",      "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1031)", "Name": "PostProcessingType",  "VR": "LO",
+             "Note": "MIP/MPR/MinIP/ADC/EXP_ADC\nMIPComposing/RadialMIP\nParallelMIP/ParallelMPR\nParallelMinIP/Calculated_bvalue"},
             {"Tag": "(00E1,1032)", "Name": "SourceDispatchUnitId","VR": "SH", "Note": ""},
-            {"Tag": "(00E1,1033)", "Name": "ADCType",            "VR": "LO", "Note": "ADC"},
-            {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold",  "VR": "LO", "Note": "ADC, Diffusion"},
-            {"Tag": "(00E1,1035)", "Name": "BValue",             "VR": "LO", "Note": "ADC, Diffusion (b values to use)"},
-            {"Tag": "(00E1,1036)", "Name": "IsMarked",           "VR": "CS", "Note": "Mark only"},
-            {"Tag": "(00E1,1037)", "Name": "NumberOfProjections","VR": "IS",
-             "Note": "MIPComposing / RadialMIP\nParallelRendering (num of slices)"},
-            {"Tag": "(00E1,1038)", "Name": "RadialAngle",        "VR": "IS", "Note": "MIPComposing, RadialMIP"},
-            {"Tag": "(00E1,1039)", "Name": "Zoom",               "VR": "LO", "Note": "RadialMIP, ParallelRendering"},
-            {"Tag": "(00E1,1040)", "Name": "SliceOrder",         "VR": "LO",
-             "Note": "RadialMIP (Rotation Order)\nParallelRendering"},
-            {"Tag": "(00E1,1041)", "Name": "Orientation",        "VR": "LO",
+            {"Tag": "(00E1,1033)", "Name": "ADCType",             "VR": "LO", "Note": "ADC"},
+            {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold",   "VR": "LO", "Note": "ADC, Diffusion"},
+            {"Tag": "(00E1,1035)", "Name": "BValue",              "VR": "LO", "Note": "ADC, Diffusion"},
+            {"Tag": "(00E1,1036)", "Name": "IsMarked",            "VR": "CS", "Note": "Mark only"},
+            {"Tag": "(00E1,1037)", "Name": "NumberOfProjections", "VR": "IS",
+             "Note": "MIPComposing/RadialMIP\nParallelRendering"},
+            {"Tag": "(00E1,1038)", "Name": "RadialAngle",         "VR": "IS", "Note": "MIPComposing, RadialMIP"},
+            {"Tag": "(00E1,1039)", "Name": "Zoom",                "VR": "LO", "Note": "RadialMIP, ParallelRendering"},
+            {"Tag": "(00E1,1040)", "Name": "SliceOrder",          "VR": "LO",
+             "Note": "RadialMIP / ParallelRendering"},
+            {"Tag": "(00E1,1041)", "Name": "Orientation",         "VR": "LO",
              "Note": "ParallelRendering\nRadialMIP (Radial Axis)"},
-            {"Tag": "(00E1,1042)", "Name": "Gap",                "VR": "LO", "Note": "ParallelRendering"},
-            {"Tag": "(00E1,1043)", "Name": "Thickness",          "VR": "LO", "Note": "ParallelRendering"},
-            {"Tag": "(00E1,1044)", "Name": "CalculatedBvalue",   "VR": "SL", "Note": "Diffusion"},
-            {"Tag": "(00E1,1045)", "Name": "PostprocessingMode", "VR": "LO",
+            {"Tag": "(00E1,1042)", "Name": "Gap",                 "VR": "LO", "Note": "ParallelRendering"},
+            {"Tag": "(00E1,1043)", "Name": "Thickness",           "VR": "LO", "Note": "ParallelRendering"},
+            {"Tag": "(00E1,1044)", "Name": "CalculatedBvalue",    "VR": "SL", "Note": "Diffusion"},
+            {"Tag": "(00E1,1045)", "Name": "PostprocessingMode",  "VR": "LO",
              "Note": "User_Defined_Mode\nDICOM_Referenced_Mode"},
         ]
-
         for t in upload_tags:
-            with st.container():
-                col_t, col_n, col_v = st.columns([2, 3, 1])
-                with col_t:
-                    st.code(t["Tag"], language=None)
-                with col_n:
-                    st.caption(f"**{t['Name']}**")
-                    if t["Note"]:
-                        st.caption(t["Note"])
-                with col_v:
-                    st.caption(f"`{t['VR']}`")
+            col_t, col_n, col_v = st.columns([2, 3, 1])
+            with col_t:
+                st.code(t["Tag"], language=None)
+            with col_n:
+                st.caption(f"**{t['Name']}**")
+                if t["Note"]:
+                    st.caption(t["Note"])
+            with col_v:
+                st.caption(f"`{t['VR']}`")
 
-    # ── AIRS Medical Recon Tags (Worker → Output) ────
     with tag_tab3:
-        st.caption("AIRS Medical Private Tags — Worker Recon Output")
+        st.caption("AIRS Medical — Worker Recon Output Tags")
         st.caption("Group: **00E1** | Creator: AIRS Medical")
-
         recon_tags = [
             {"Tag": "(00E1,1020)", "Name": "InputSnr",          "VR": "FL", "Note": ""},
             {"Tag": "(00E1,1021)", "Name": "OutputSnr",         "VR": "FL", "Note": ""},
             {"Tag": "(00E1,1022)", "Name": "DenoisingLevel",    "VR": "LO",
-             "Note": "e.g. '4: 3.0'\n→ 4: client selected level\n→ 3.0: relative_snr value"},
+             "Note": "e.g. '4: 3.0'\n→ 4: selected level\n→ 3.0: relative_snr"},
             {"Tag": "(00E1,1023)", "Name": "Sharpness",         "VR": "FL", "Note": ""},
             {"Tag": "(00E1,1024)", "Name": "ModelPath",         "VR": "OB", "Note": ""},
             {"Tag": "(00E1,1025)", "Name": "ModelHeader",       "VR": "LO", "Note": ""},
@@ -567,17 +572,15 @@ with st.sidebar:
             {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold", "VR": "LO",
              "Note": "After recon: applied value\nappended after ':'"},
             {"Tag": "(00E1,1035)", "Name": "BValue",            "VR": "LO",
-             "Note": "After recon: applied B-values\nrecorded for ADC images"},
+             "Note": "After recon: applied B-values\nfor ADC images"},
         ]
-
         for t in recon_tags:
-            with st.container():
-                col_t, col_n, col_v = st.columns([2, 3, 1])
-                with col_t:
-                    st.code(t["Tag"], language=None)
-                with col_n:
-                    st.caption(f"**{t['Name']}**")
-                    if t["Note"]:
-                        st.caption(t["Note"])
-                with col_v:
-                    st.caption(f"`{t['VR']}`")
+            col_t, col_n, col_v = st.columns([2, 3, 1])
+            with col_t:
+                st.code(t["Tag"], language=None)
+            with col_n:
+                st.caption(f"**{t['Name']}**")
+                if t["Note"]:
+                    st.caption(t["Note"])
+            with col_v:
+                st.caption(f"`{t['VR']}`")
