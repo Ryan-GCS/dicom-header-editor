@@ -353,6 +353,42 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# ════════════════════════════════════════════════════
+# PHI WARNING
+# ════════════════════════════════════════════════════
+st.markdown("""
+<div style="
+    background: linear-gradient(135deg, rgba(255,80,80,0.12), rgba(200,0,0,0.08));
+    border: 1.5px solid rgba(255,80,80,0.5);
+    border-left: 4px solid #ff4444;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 8px;
+">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <span style="font-size:20px;">🔒</span>
+        <span style="font-size:15px; font-weight:800; color:#ff4444; letter-spacing:1px;">
+            HIPAA & GDPR WARNING
+        </span>
+    </div>
+    <div style="font-size:13px; color:#e8eaf0; line-height:1.8;">
+        ⚠️ This tool runs on <b>Streamlit Cloud (external server)</b>.<br>
+        ⚠️ <b>DO NOT upload files containing PHI (Protected Health Information)</b>.<br>
+        ⚠️ Uploading real patient data may violate <b>HIPAA</b> and <b>GDPR</b> regulations.<br>
+        ✅ Only use <b>fully anonymized or de-identified DICOM files</b>.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+phi_confirmed = st.checkbox(
+    "✅ I confirm that this file does NOT contain any PHI (Protected Health Information) "
+    "and is fully anonymized.",
+    key="phi_confirm"
+)
+
+if not phi_confirmed:
+    st.warning("⛔ Please confirm the above statement before uploading any files.")
+    st.stop()
 
 # ════════════════════════════════════════════════════
 # STEP 1 : Upload
