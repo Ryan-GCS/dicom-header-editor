@@ -2,7 +2,9 @@ import streamlit as st
 import pydicom
 import pandas as pd
 import io
+import zipfile
 from copy import deepcopy
+from pathlib import Path
 
 # ── Page Config ──────────────────────────────────────
 st.set_page_config(
@@ -12,11 +14,11 @@ st.set_page_config(
 )
 
 st.title("🏥 DICOM Header Editor")
-st.caption("Upload a DICOM file, modify header tags, and download the result.")
+st.caption("Upload a DICOM file or ZIP archive, modify header tags, and download the result.")
 
 # ── Utility Functions ────────────────────────────────
 def parse_dicom(file_bytes: bytes):
-    return pydicom.dcmread(io.BytesIO(file_bytes))
+    return pydicom.dcmread(io.BytesIO(file_bytes), force=True)
 
 def extract_tags(ds) -> list:
     rows = []
@@ -39,7 +41,8 @@ def extract_tags(ds) -> list:
             continue
     return rows
 
-def apply_modifications(ds, modifications: dict):
+def apply_modifications_to_ds(ds, modifications: dict):
+    """단일 Dataset에 수정사항 적용 → (modified_bytes, results)"""
     ds_copy = deepcopy(ds)
     results = []
 
@@ -49,7 +52,7 @@ def apply_modifications(ds, modifications: dict):
             tag = pydicom.tag.Tag(int(group, 16), int(element, 16))
 
             if tag in ds_copy:
-                vr = ds_copy[tag].VR
+                vr        = ds_copy[tag].VR
                 old_value = str(ds_copy[tag].value)
 
                 if vr in ["DS", "FL", "FD"]:
@@ -83,38 +86,194 @@ def apply_modifications(ds, modifications: dict):
     ds_copy.save_as(output, write_like_original=True)
     return output.getvalue(), results
 
+def is_dicom_file(filename: str, file_bytes: bytes) -> bool:
+    """DICOM 파일 여부 확인 (확장자 + 매직바이트)"""
+    ext = Path(filename).suffix.lower()
+    if ext in [".dcm", ".ima", ".dicom"]:
+        return True
+    # 확장자 없는 경우 매직바이트로 확인 (DICM at offset 128)
+    if len(file_bytes) > 132 and file_bytes[128:132] == b"DICM":
+        return True
+    return False
+
+def process_zip(zip_bytes: bytes, modifications: dict):
+    """
+    ZIP 내 모든 DICOM 파일에 수정사항 적용
+    → 수정된 파일들을 새 ZIP으로 반환
+    """
+    input_zip  = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    output_buf = io.BytesIO()
+    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
+
+    all_results  = []
+    success_count = 0
+    skip_count    = 0
+    error_count   = 0
+
+    file_list = [f for f in input_zip.namelist() if not f.endswith("/")]
+
+    progress_bar = st.progress(0, text="Processing files...")
+    total = len(file_list)
+
+    for idx, filename in enumerate(file_list):
+        file_bytes = input_zip.read(filename)
+
+        # DICOM 파일 여부 확인
+        if not is_dicom_file(filename, file_bytes):
+            # DICOM 아닌 파일은 그대로 복사
+            output_zip.writestr(filename, file_bytes)
+            skip_count += 1
+            progress_bar.progress(
+                (idx + 1) / total,
+                text=f"Skipped (non-DICOM): {filename}"
+            )
+            continue
+
+        try:
+            ds = parse_dicom(file_bytes)
+            modified_bytes, results = apply_modifications_to_ds(ds, modifications)
+
+            # 결과에 파일명 추가
+            for r in results:
+                r["File"] = filename
+            all_results.extend(results)
+
+            # 수정된 파일을 ZIP에 추가
+            output_zip.writestr(filename, modified_bytes)
+            success_count += 1
+            progress_bar.progress(
+                (idx + 1) / total,
+                text=f"Processing ({idx+1}/{total}): {filename}"
+            )
+
+        except Exception as e:
+            error_count += 1
+            all_results.append({
+                "File": filename, "Tag": "-", "Keyword": "-",
+                "Before": "-", "After": "-",
+                "Status": f"❌ Failed to read: {e}"
+            })
+            # 실패한 파일은 원본 그대로 복사
+            output_zip.writestr(filename, file_bytes)
+
+    output_zip.close()
+    progress_bar.progress(1.0, text="✅ All files processed!")
+
+    summary = {
+        "total":   total,
+        "success": success_count,
+        "skipped": skip_count,
+        "errors":  error_count
+    }
+    return output_buf.getvalue(), all_results, summary
+
+
 # ── Session State Init ───────────────────────────────
-if "ds"            not in st.session_state: st.session_state.ds            = None
-if "tags_df"       not in st.session_state: st.session_state.tags_df       = None
-if "modifications" not in st.session_state: st.session_state.modifications = {}
-if "filename"      not in st.session_state: st.session_state.filename      = ""
-if "modified_bytes" not in st.session_state: st.session_state.modified_bytes = None
-if "mod_results"   not in st.session_state: st.session_state.mod_results   = None
+defaults = {
+    "ds":             None,
+    "tags_df":        None,
+    "modifications":  {},
+    "filename":       "",
+    "modified_bytes": None,
+    "mod_results":    None,
+    "upload_mode":    None,   # "single" | "zip"
+    "zip_bytes":      None,
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
 
 # ── STEP 1: File Upload ──────────────────────────────
-st.header("① Upload DICOM File")
+st.header("① Upload File")
 
-uploaded = st.file_uploader(
-    "Upload a DICOM file (.dcm)",
-    type=["dcm", "DCM"],
-    help="If your file has no extension, rename it with .dcm before uploading."
+upload_mode = st.radio(
+    "Select upload type",
+    ["Single DICOM (.dcm)", "Multiple DICOMs (.zip)"],
+    horizontal=True
 )
 
-if uploaded:
-    file_bytes = uploaded.read()
-    st.session_state.ds            = parse_dicom(file_bytes)
-    st.session_state.tags_df       = extract_tags(st.session_state.ds)
-    st.session_state.filename      = uploaded.name
-    st.session_state.modifications = {}
-    st.session_state.modified_bytes = None
-    st.session_state.mod_results   = None
-    st.success(f"✅ Loaded: `{uploaded.name}` — {len(st.session_state.tags_df)} tags found")
+if upload_mode == "Single DICOM (.dcm)":
+    uploaded = st.file_uploader(
+        "Upload a DICOM file",
+        type=["dcm", "DCM"],
+        help="Rename to .dcm if your file has no extension."
+    )
+    if uploaded:
+        file_bytes = uploaded.read()
+        st.session_state.ds             = parse_dicom(file_bytes)
+        st.session_state.tags_df        = extract_tags(st.session_state.ds)
+        st.session_state.filename       = uploaded.name
+        st.session_state.upload_mode    = "single"
+        st.session_state.zip_bytes      = None
+        st.session_state.modifications  = {}
+        st.session_state.modified_bytes = None
+        st.session_state.mod_results    = None
+        st.success(
+            f"✅ Loaded: `{uploaded.name}` — "
+            f"{len(st.session_state.tags_df)} tags found"
+        )
+
+else:  # ZIP
+    uploaded = st.file_uploader(
+        "Upload a ZIP file containing DICOM files",
+        type=["zip"],
+        help="All DICOM files inside the ZIP will be processed."
+    )
+    if uploaded:
+        zip_bytes = uploaded.read()
+
+        # ZIP 내 파일 목록 미리보기
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            file_list = [f for f in zf.namelist() if not f.endswith("/")]
+            dcm_files = [
+                f for f in file_list
+                if Path(f).suffix.lower() in [".dcm", ".ima", ".dicom"]
+                or Path(f).suffix == ""
+            ]
+
+        st.success(
+            f"✅ ZIP loaded: `{uploaded.name}` — "
+            f"**{len(file_list)} total files** / "
+            f"**{len(dcm_files)} DICOM files** detected"
+        )
+
+        with st.expander("📂 View files in ZIP", expanded=False):
+            st.dataframe(
+                pd.DataFrame({"File": file_list}),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        # 태그 미리보기용: ZIP 내 첫 번째 DICOM 읽기
+        first_dcm_bytes = None
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            for fname in zf.namelist():
+                if fname.endswith("/"):
+                    continue
+                fb = zf.read(fname)
+                if is_dicom_file(fname, fb):
+                    first_dcm_bytes = fb
+                    break
+
+        if first_dcm_bytes:
+            st.session_state.ds            = parse_dicom(first_dcm_bytes)
+            st.session_state.tags_df       = extract_tags(st.session_state.ds)
+            st.session_state.zip_bytes     = zip_bytes
+            st.session_state.filename      = uploaded.name
+            st.session_state.upload_mode   = "zip"
+            st.session_state.modifications = {}
+            st.session_state.modified_bytes = None
+            st.session_state.mod_results   = None
+            st.info("🔍 Tag list loaded from the first DICOM file in the ZIP.")
+        else:
+            st.error("❌ No valid DICOM files found in the ZIP.")
+
 
 # ── STEP 2: Tag Viewer & Editor ──────────────────────
 if st.session_state.ds is not None:
     st.header("② View & Edit Tags")
 
-    # Search & Filter
     col1, col2 = st.columns([3, 1])
     with col1:
         search = st.text_input(
@@ -142,20 +301,21 @@ if st.session_state.ds is not None:
 
     col_a, col_b, col_c = st.columns([2, 3, 1])
     with col_a:
-        tag_options = df["Tag"].tolist()
+        tag_options  = df["Tag"].tolist()
         selected_tag = st.selectbox("Select tag to edit", tag_options)
     with col_b:
         if selected_tag:
             current_val = df[df["Tag"] == selected_tag]["Value"].values[0]
-            default_val = st.session_state.modifications.get(selected_tag, current_val)
-            new_value   = st.text_input("New value", value=default_val)
+            default_val = st.session_state.modifications.get(
+                selected_tag, current_val)
+            new_value = st.text_input("New value", value=default_val)
     with col_c:
         st.write("")
         st.write("")
         if st.button("➕ Add", use_container_width=True):
             if selected_tag and new_value is not None:
                 st.session_state.modifications[selected_tag] = new_value
-                st.session_state.modified_bytes = None  # reset download
+                st.session_state.modified_bytes = None
                 st.success(f"Added: {selected_tag}")
 
     # ── Pending Modifications ────────────────────────
@@ -169,13 +329,15 @@ if st.session_state.ds is not None:
             ori = df[df["Tag"] == tag]["Value"].values
             ori = ori[0] if len(ori) > 0 else "-"
             mod_data.append({
-                "Tag":      tag,
-                "Keyword":  kw,
-                "Original": ori,
-                "New Value": val
+                "Tag": tag, "Keyword": kw,
+                "Original": ori, "New Value": val
             })
 
-        st.dataframe(pd.DataFrame(mod_data), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(mod_data),
+            use_container_width=True,
+            hide_index=True
+        )
 
         col_del, col_tag_del = st.columns([2, 3])
         with col_del:
@@ -203,7 +365,8 @@ if st.session_state.ds is not None:
             return [""] * len(row)
 
         st.dataframe(
-            df.drop(columns=["Private"]).style.apply(highlight_modified, axis=1),
+            df.drop(columns=["Private"]).style.apply(
+                highlight_modified, axis=1),
             use_container_width=True,
             height=400
         )
@@ -216,63 +379,205 @@ if st.session_state.ds is not None:
     else:
         st.write(f"**{len(st.session_state.modifications)} tag(s)** will be modified.")
 
-        if st.button("🚀 Apply Modifications", type="primary", use_container_width=True):
-            with st.spinner("Processing DICOM file..."):
-                modified_bytes, results = apply_modifications(
-                    st.session_state.ds,
+        # ── Single DICOM ─────────────────────────────
+        if st.session_state.upload_mode == "single":
+            if st.button("🚀 Apply Modifications", type="primary",
+                         use_container_width=True):
+                with st.spinner("Processing DICOM file..."):
+                    modified_bytes, results = apply_modifications_to_ds(
+                        st.session_state.ds,
+                        st.session_state.modifications
+                    )
+                    st.session_state.modified_bytes = modified_bytes
+                    st.session_state.mod_results    = results
+
+            if st.session_state.mod_results:
+                st.subheader("📊 Modification Report")
+                st.dataframe(
+                    pd.DataFrame(st.session_state.mod_results),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            if st.session_state.modified_bytes:
+                st.download_button(
+                    label="⬇️ Download Modified DICOM",
+                    data=st.session_state.modified_bytes,
+                    file_name=f"modified_{st.session_state.filename}",
+                    mime="application/octet-stream",
+                    use_container_width=True
+                )
+
+        # ── ZIP ──────────────────────────────────────
+        else:
+            st.info(
+                "All DICOM files in the ZIP will be modified with "
+                "the same tag changes."
+            )
+
+            if st.button("🚀 Apply to All & Create ZIP", type="primary",
+                         use_container_width=True):
+                modified_zip, all_results, summary = process_zip(
+                    st.session_state.zip_bytes,
                     st.session_state.modifications
                 )
-                st.session_state.modified_bytes = modified_bytes
-                st.session_state.mod_results    = results
+                st.session_state.modified_bytes = modified_zip
+                st.session_state.mod_results    = all_results
 
-        # ── Result Report & Download ─────────────────
-        if st.session_state.mod_results:
-            st.subheader("📊 Modification Report")
-            st.dataframe(
-                pd.DataFrame(st.session_state.mod_results),
-                use_container_width=True,
-                hide_index=True
-            )
+                # Summary
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1.metric("Total Files",    summary["total"])
+                col_s2.metric("✅ Processed",   summary["success"])
+                col_s3.metric("⏭️ Skipped",     summary["skipped"])
+                col_s4.metric("❌ Errors",       summary["errors"])
 
-        if st.session_state.modified_bytes:
-            output_filename = f"modified_{st.session_state.filename}"
-            st.download_button(
-                label="⬇️ Download Modified DICOM",
-                data=st.session_state.modified_bytes,
-                file_name=output_filename,
-                mime="application/octet-stream",
-                use_container_width=True
-            )
+            if st.session_state.mod_results:
+                st.subheader("📊 Modification Report")
+                with st.expander("View full report", expanded=False):
+                    st.dataframe(
+                        pd.DataFrame(st.session_state.mod_results),
+                        use_container_width=True,
+                        height=400,
+                        hide_index=True
+                    )
+
+            if st.session_state.modified_bytes:
+                zip_name = st.session_state.filename.replace(
+                    ".zip", "_modified.zip")
+                st.download_button(
+                    label="⬇️ Download Modified ZIP",
+                    data=st.session_state.modified_bytes,
+                    file_name=zip_name,
+                    mime="application/zip",
+                    use_container_width=True
+                )
 
 # ── Sidebar ──────────────────────────────────────────
 with st.sidebar:
     st.header("📖 How to Use")
     st.markdown("""
-    1. **Upload** a DICOM file
-    2. **Search** for the tag you want to edit
-    3. **Enter** a new value and click `Add`
-    4. Repeat for multiple tags
-    5. Click **Apply Modifications**
-    6. **Download** the modified file
+    **Single File**
+    1. Select *Single DICOM* mode
+    2. Upload a `.dcm` file
+    3. Search & edit tags
+    4. Apply → Download
+
+    **Batch (ZIP)**
+    1. Select *Multiple DICOMs* mode
+    2. Upload a `.zip` containing DICOM files
+    3. Edit tags *(previewed from first file)*
+    4. Apply to All → Download ZIP
     """)
 
     st.divider()
 
     st.header("⚠️ Notes")
     st.warning("""
-    - Original file is never modified
-    - Be careful when editing Private Tags
-    - Do not upload files with real patient data (PHI) to public deployments
+    - Original files are never modified
+    - Tags are applied to ALL DICOM files in ZIP
+    - Do not upload real patient data (PHI)
+      to public deployments
     """)
 
     st.divider()
 
+    # ── Common Tags ──────────────────────────────────
     st.header("🔧 Common Tags")
-    st.code("""
-(0020,000E) SeriesInstanceUID
-(0020,000D) StudyInstanceUID
-(0008,103E) SeriesDescription
-(0010,0010) PatientName
-(0008,0060) Modality
-(2001,9000) Private Tag (Philips)
-    """)
+
+    tag_tab1, tag_tab2, tag_tab3 = st.tabs(["Standard", "AIRS Upload", "AIRS Recon"])
+
+    # ── Standard DICOM Tags ──────────────────────────
+    with tag_tab1:
+        st.caption("Standard DICOM Tags")
+        standard_tags = [
+            {"Tag": "(0020,000E)", "Keyword": "SeriesInstanceUID"},
+            {"Tag": "(0020,000D)", "Keyword": "StudyInstanceUID"},
+            {"Tag": "(0008,103E)", "Keyword": "SeriesDescription"},
+            {"Tag": "(0010,0010)", "Keyword": "PatientName"},
+            {"Tag": "(0008,0060)", "Keyword": "Modality"},
+            {"Tag": "(2001,9000)", "Keyword": "Private Tag (Philips)"},
+        ]
+        for t in standard_tags:
+            col_t, col_k = st.columns([2, 3])
+            with col_t:
+                st.code(t["Tag"], language=None)
+            with col_k:
+                st.caption(t["Keyword"])
+
+    # ── AIRS Medical Upload Tags (DCS → Worker) ──────
+    with tag_tab2:
+        st.caption("AIRS Medical Private Tags — DCS Upload")
+        st.caption("Group: **00E1** | Creator: AIRS Medical")
+
+        upload_tags = [
+            {"Tag": "(00E1,1010)", "Name": "StudyId",            "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1011)", "Name": "SeriesId",           "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1012)", "Name": "ImageId",            "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1014)", "Name": "UploadId",           "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1015)", "Name": "DeviceId",           "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1030)", "Name": "DispatchUnitId",     "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1031)", "Name": "PostProcessingType", "VR": "LO",
+             "Note": "MIP / MPR / MinIP / ADC / EXP_ADC\nMIPComposing / RadialMIP / ParallelMIP\nParallelMPR / ParallelMinIP / Calculated_bvalue"},
+            {"Tag": "(00E1,1032)", "Name": "SourceDispatchUnitId","VR": "SH", "Note": ""},
+            {"Tag": "(00E1,1033)", "Name": "ADCType",            "VR": "LO", "Note": "ADC"},
+            {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold",  "VR": "LO", "Note": "ADC, Diffusion"},
+            {"Tag": "(00E1,1035)", "Name": "BValue",             "VR": "LO", "Note": "ADC, Diffusion (b values to use)"},
+            {"Tag": "(00E1,1036)", "Name": "IsMarked",           "VR": "CS", "Note": "Mark only"},
+            {"Tag": "(00E1,1037)", "Name": "NumberOfProjections","VR": "IS",
+             "Note": "MIPComposing / RadialMIP\nParallelRendering (num of slices)"},
+            {"Tag": "(00E1,1038)", "Name": "RadialAngle",        "VR": "IS", "Note": "MIPComposing, RadialMIP"},
+            {"Tag": "(00E1,1039)", "Name": "Zoom",               "VR": "LO", "Note": "RadialMIP, ParallelRendering"},
+            {"Tag": "(00E1,1040)", "Name": "SliceOrder",         "VR": "LO",
+             "Note": "RadialMIP (Rotation Order)\nParallelRendering"},
+            {"Tag": "(00E1,1041)", "Name": "Orientation",        "VR": "LO",
+             "Note": "ParallelRendering\nRadialMIP (Radial Axis)"},
+            {"Tag": "(00E1,1042)", "Name": "Gap",                "VR": "LO", "Note": "ParallelRendering"},
+            {"Tag": "(00E1,1043)", "Name": "Thickness",          "VR": "LO", "Note": "ParallelRendering"},
+            {"Tag": "(00E1,1044)", "Name": "CalculatedBvalue",   "VR": "SL", "Note": "Diffusion"},
+            {"Tag": "(00E1,1045)", "Name": "PostprocessingMode", "VR": "LO",
+             "Note": "User_Defined_Mode\nDICOM_Referenced_Mode"},
+        ]
+
+        for t in upload_tags:
+            with st.container():
+                col_t, col_n, col_v = st.columns([2, 3, 1])
+                with col_t:
+                    st.code(t["Tag"], language=None)
+                with col_n:
+                    st.caption(f"**{t['Name']}**")
+                    if t["Note"]:
+                        st.caption(t["Note"])
+                with col_v:
+                    st.caption(f"`{t['VR']}`")
+
+    # ── AIRS Medical Recon Tags (Worker → Output) ────
+    with tag_tab3:
+        st.caption("AIRS Medical Private Tags — Worker Recon Output")
+        st.caption("Group: **00E1** | Creator: AIRS Medical")
+
+        recon_tags = [
+            {"Tag": "(00E1,1020)", "Name": "InputSnr",          "VR": "FL", "Note": ""},
+            {"Tag": "(00E1,1021)", "Name": "OutputSnr",         "VR": "FL", "Note": ""},
+            {"Tag": "(00E1,1022)", "Name": "DenoisingLevel",    "VR": "LO",
+             "Note": "e.g. '4: 3.0'\n→ 4: client selected level\n→ 3.0: relative_snr value"},
+            {"Tag": "(00E1,1023)", "Name": "Sharpness",         "VR": "FL", "Note": ""},
+            {"Tag": "(00E1,1024)", "Name": "ModelPath",         "VR": "OB", "Note": ""},
+            {"Tag": "(00E1,1025)", "Name": "ModelHeader",       "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1026)", "Name": "ModelVersion",      "VR": "LO", "Note": ""},
+            {"Tag": "(00E1,1034)", "Name": "ADCNoiseThreshold", "VR": "LO",
+             "Note": "After recon: applied value\nappended after ':'"},
+            {"Tag": "(00E1,1035)", "Name": "BValue",            "VR": "LO",
+             "Note": "After recon: applied B-values\nrecorded for ADC images"},
+        ]
+
+        for t in recon_tags:
+            with st.container():
+                col_t, col_n, col_v = st.columns([2, 3, 1])
+                with col_t:
+                    st.code(t["Tag"], language=None)
+                with col_n:
+                    st.caption(f"**{t['Name']}**")
+                    if t["Note"]:
+                        st.caption(t["Note"])
+                with col_v:
+                    st.caption(f"`{t['VR']}`")
