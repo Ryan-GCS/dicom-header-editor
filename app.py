@@ -669,6 +669,6 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     <div style="text-align:center;font-size:11px;color:#4a5568;padding:8px 0;">
-        © 2026 AIRS Medical Inc.<br>All rights reserved. Global Technical Support
+        © 2026 AIRS Medical Inc.<br>All rights reserved.<br> Global Technical Support
     </div>
     """, unsafe_allow_html=True)
