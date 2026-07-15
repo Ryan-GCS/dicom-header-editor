@@ -12,12 +12,12 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
-    page_title="DICOM Header Editor | SwiftMR",
+    page_title="DICOM Header Editor | AIRS Medical",
     page_icon="🏥",
     layout="wide"
 )
 
-# ──  ─────────────────────────────────────────────
+# ── Logo ─────────────────────────────────────────────
 def get_image_base64(path):
     try:
         with open(path, "rb") as f:
@@ -26,8 +26,8 @@ def get_image_base64(path):
         return None
 
 logo_b64 = get_image_base64("logo.png")
-logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;">' if logo_b64 else "🏥"
-sidebar_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:48px;height:48px;object-fit:contain;">' if logo_b64 else "🏥"
+logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;border-radius:8px;">' if logo_b64 else "🫁"
+sidebar_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:48px;height:48px;object-fit:contain;border-radius:12px;">' if logo_b64 else "🫁"
 
 # ── Custom CSS ───────────────────────────────────────
 st.markdown("""
@@ -134,12 +134,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Header ───────────────────────────────────────────
+# ── AIRS Header ──────────────────────────────────────
 st.markdown(f"""
 <div class="airs-header">
-    <div class="airs--box">{_html}</div>
+    <div class="airs-logo-box">{logo_html}</div>
     <div class="airs-title">
-        <h1>SwiftMR</h1>
+        <h1>AIRS MEDICAL</h1>
         <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
     </div>
     <div class="airs-badge">v2.0</div>
@@ -506,13 +506,15 @@ with st.sidebar:
     st.markdown(f"""
     <div style="text-align:center; padding:16px 0 20px;">
         <div style="width:56px;height:56px;margin:0 auto 10px;
-            display:flex;align-items:center;justify-content:center;">
-            {sidebar__html}
+            background:transparent;
+            border-radius:14px;display:flex;align-items:center;
+            justify-content:center;">
+            {sidebar_logo_html}
         </div>
         <div style="font-size:14px;font-weight:800;letter-spacing:2px;
             background:linear-gradient(90deg,#00d4ff,#0066ff);
             -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-            SwiftMR</div>
+            AIRS MEDICAL</div>
         <div style="font-size:11px;color:#8892a4;margin-top:2px;letter-spacing:1px;">
             DICOM Header Editor</div>
     </div>
