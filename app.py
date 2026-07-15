@@ -10,6 +10,17 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
+import base64
+
+def get_image_base64(path):
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except:
+        return None
+
+logo_b64 = get_image_base64("logo.png")
+
 st.set_page_config(
     page_title="DICOM Header Editor | AIRS Medical",
     page_icon="🏥",
