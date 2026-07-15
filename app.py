@@ -5,13 +5,19 @@ import io
 import zipfile
 import re
 import warnings
+import base64
 from copy import deepcopy
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-import base64
+st.set_page_config(
+    page_title="DICOM Header Editor | AIRS Medical",
+    page_icon="🏥",
+    layout="wide"
+)
 
+# ── Logo ─────────────────────────────────────────────
 def get_image_base64(path):
     try:
         with open(path, "rb") as f:
@@ -20,12 +26,8 @@ def get_image_base64(path):
         return None
 
 logo_b64 = get_image_base64("logo.png")
-
-st.set_page_config(
-    page_title="DICOM Header Editor | AIRS Medical",
-    page_icon="🏥",
-    layout="wide"
-)
+logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;border-radius:8px;">' if logo_b64 else "🫁"
+sidebar_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:48px;height:48px;object-fit:contain;border-radius:12px;">' if logo_b64 else "🫁"
 
 # ── Custom CSS ───────────────────────────────────────
 st.markdown("""
@@ -42,11 +44,10 @@ st.markdown("""
 }
 .airs-logo-box {
     width: 52px; height: 52px;
-    background: linear-gradient(135deg, #00d4ff, #0066ff);
+    background: transparent;
     border-radius: 12px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 26px;
-    box-shadow: 0 4px 20px rgba(0,212,255,0.4);
+    flex-shrink: 0;
 }
 .airs-title h1 {
     margin: 0; font-size: 22px; font-weight: 800;
@@ -134,12 +135,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── AIRS Header ──────────────────────────────────────
-st.markdown("""
+st.markdown(f"""
 <div class="airs-header">
-    <div class="airs-logo-box">
-        <img src="https://airsmedical.com/wp-content/uploads/2021/03/AIRS-Medical-Logo.png" 
-             style="width:44px; height:44px; object-fit:contain; border-radius:8px;">
-    </div>
+    <div class="airs-logo-box">{logo_html}</div>
     <div class="airs-title">
         <h1>AIRS MEDICAL</h1>
         <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
@@ -147,6 +145,7 @@ st.markdown("""
     <div class="airs-badge">v2.0</div>
 </div>
 """, unsafe_allow_html=True)
+
 
 # ── Utility Functions ────────────────────────────────
 def parse_dicom(file_bytes):
@@ -504,13 +503,14 @@ if st.session_state.ds is not None:
 
 # ── Sidebar ──────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
+    st.markdown(f"""
     <div style="text-align:center; padding:16px 0 20px;">
-        <div style="width:52px;height:52px;margin:0 auto 10px;
-            background:linear-gradient(135deg,#00d4ff,#0066ff);
+        <div style="width:56px;height:56px;margin:0 auto 10px;
+            background:transparent;
             border-radius:14px;display:flex;align-items:center;
-            justify-content:center;font-size:26px;
-            box-shadow:0 4px 20px rgba(0,212,255,0.4);">🫁</div>
+            justify-content:center;">
+            {sidebar_logo_html}
+        </div>
         <div style="font-size:14px;font-weight:800;letter-spacing:2px;
             background:linear-gradient(90deg,#00d4ff,#0066ff);
             -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
@@ -602,6 +602,6 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     <div style="text-align:center;font-size:11px;color:#4a5568;padding:8px 0;">
-        © 2026 AIRS Medical Inc.<br>All rights reserved. Global Technical Support
+        © 2024 AIRS Medical Inc.<br>All rights reserved.
     </div>
     """, unsafe_allow_html=True)
