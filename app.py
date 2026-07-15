@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# ── Logo ─────────────────────────────────────────────
+# ──  ─────────────────────────────────────────────
 def get_image_base64(path):
     try:
         with open(path, "rb") as f:
@@ -25,7 +25,7 @@ def get_image_base64(path):
     except:
         return None
 
-logo_b64 = get_image_base64("SwiftMR logo.png")
+logo_b64 = get_image_base64("logo.png")
 logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;">' if logo_b64 else "🏥"
 sidebar_logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="width:48px;height:48px;object-fit:contain;">' if logo_b64 else "🏥"
 
@@ -137,7 +137,7 @@ st.markdown("""
 # ── Header ───────────────────────────────────────────
 st.markdown(f"""
 <div class="airs-header">
-    <div class="airs-logo-box">{logo_html}</div>
+    <div class="airs--box">{_html}</div>
     <div class="airs-title">
         <h1>SwiftMR</h1>
         <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
@@ -507,7 +507,7 @@ with st.sidebar:
     <div style="text-align:center; padding:16px 0 20px;">
         <div style="width:56px;height:56px;margin:0 auto 10px;
             display:flex;align-items:center;justify-content:center;">
-            {sidebar_logo_html}
+            {sidebar__html}
         </div>
         <div style="font-size:14px;font-weight:800;letter-spacing:2px;
             background:linear-gradient(90deg,#00d4ff,#0066ff);
