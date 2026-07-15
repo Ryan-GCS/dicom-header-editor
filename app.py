@@ -373,9 +373,12 @@ if st.session_state.ds is not None:
             st.session_state.summary        = None
             st.session_state.queue_msg      = ("success", f"Queued: **{selected_tag}** → `{val}`")
 
-    if st.session_state.queue_msg:
-        t, m = st.session_state.queue_msg
-        st.success(m) if t == "success" else st.warning(m)
+   if st.session_state.queue_msg:
+    t, m = st.session_state.queue_msg
+    if t == "success":
+        st.success(m)
+    else:
+        st.warning(m)
 
     if st.session_state.modifications:
         st.markdown("#### 📋 Pending Modifications")
