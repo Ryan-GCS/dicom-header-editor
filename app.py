@@ -146,7 +146,7 @@ defaults = {
     "tags_df":         None,
     "modifications":   {},
     "filename":        "",
-    "modified_bytes":  None,  # ← bytes 저장
+    "modified_bytes":  None,
     "mod_results":     None,
     "upload_mode":     None,
     "zip_bytes":       None,
@@ -338,6 +338,15 @@ if st.session_state.ds is not None:
     # ── STEP 3: Apply & Download ─────────────────────
     st.header("③ Apply & Download")
 
+    # ✅ 디버그 패널
+    with st.expander("🔍 Debug Info", expanded=True):
+        st.write(f"- **upload_mode**: `{st.session_state.upload_mode}`")
+        st.write(f"- **filename**: `{st.session_state.filename}`")
+        st.write(f"- **zip_bytes**: `{'있음 (' + str(len(st.session_state.zip_bytes)) + ' bytes)' if st.session_state.zip_bytes else '없음 ❌'}`")
+        st.write(f"- **modifications**: `{st.session_state.modifications}`")
+        st.write(f"- **modified_bytes**: `{'있음 (' + str(len(st.session_state.modified_bytes)) + ' bytes)' if st.session_state.modified_bytes else '없음'}`")
+        st.write(f"- **summary**: `{st.session_state.summary}`")
+
     if not st.session_state.modifications:
         st.info("No modifications queued yet.")
     else:
@@ -369,22 +378,27 @@ if st.session_state.ds is not None:
                     use_container_width=True
                 )
 
-        else:
+        elif st.session_state.upload_mode == "zip":
             st.info("All DICOM files in the ZIP will be modified with the same tag changes.")
 
             if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
-                with st.spinner("Processing ZIP... Please wait."):
-                    result_bytes, all_results, summary = process_zip(
-                        st.session_state.zip_bytes,
-                        st.session_state.modifications
-                    )
-                # ✅ 핵심: spinner 블록 종료 직후 즉시 저장
-                st.session_state.modified_bytes = result_bytes
-                st.session_state.mod_results    = all_results
-                st.session_state.summary        = summary
-                # ✅ rerun 없음 — 같은 사이클에서 아래 코드가 바로 실행됨
+                st.write("✅ 버튼 클릭 감지됨")
 
-            # ✅ session_state.summary 로만 판단 (zip_ready 플래그 불필요)
+                if st.session_state.zip_bytes is None:
+                    st.error("❌ zip_bytes가 None! 파일을 다시 업로드해주세요.")
+                else:
+                    st.write(f"zip_bytes 크기: {len(st.session_state.zip_bytes)}")
+                    with st.spinner("Processing ZIP..."):
+                        result_bytes, all_results, summary = process_zip(
+                            st.session_state.zip_bytes,
+                            st.session_state.modifications
+                        )
+                    st.write(f"✅ 처리 완료! result_bytes: {len(result_bytes)} bytes")
+                    st.session_state.modified_bytes = result_bytes
+                    st.session_state.mod_results    = all_results
+                    st.session_state.summary        = summary
+                    st.write(f"summary: {summary}")
+
             if st.session_state.summary is not None:
                 s = st.session_state.summary
                 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
@@ -394,7 +408,7 @@ if st.session_state.ds is not None:
                 col_s4.metric("Errors",    s["errors"])
 
                 if s["success"] == 0:
-                    st.error("No DICOM files were processed! Report를 확인해주세요.")
+                    st.error("No DICOM files were processed!")
 
             if st.session_state.mod_results:
                 with st.expander("View Modification Report", expanded=False):
@@ -405,10 +419,9 @@ if st.session_state.ds is not None:
                         hide_index=True
                     )
 
-            # ✅ Download 버튼
             if st.session_state.modified_bytes is not None:
                 zip_name = st.session_state.filename.replace(".zip", "_modified.zip")
-                st.success("ZIP is ready! Click below to download.")
+                st.success("ZIP is ready!")
                 st.download_button(
                     label="⬇️ Download Modified ZIP",
                     data=st.session_state.modified_bytes,
@@ -417,6 +430,10 @@ if st.session_state.ds is not None:
                     use_container_width=True,
                     type="primary"
                 )
+
+        else:
+            # ✅ upload_mode가 예상과 다를 때 표시
+            st.error(f"❌ upload_mode가 '{st.session_state.upload_mode}' 입니다. 파일을 다시 업로드해주세요.")
 
 
 # ── Sidebar ──────────────────────────────────────────
