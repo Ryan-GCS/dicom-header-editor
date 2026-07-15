@@ -457,7 +457,17 @@ if st.session_state.ds is not None:
 
     col_a, col_b = st.columns([2, 3])
     with col_a:
-        selected_tag = st.selectbox("Select tag to edit", df["Tag"].tolist(), key="tag_select")
+       tag_options = [
+            f"{row['Tag']}  {row['Keyword']}"
+            for _, row in df.iterrows()
+        ]
+        selected_option = st.selectbox(
+            "Select tag to edit",
+            tag_options,
+            key="tag_select"
+        )
+        selected_tag = selected_option.split("  ")[0] if selected_option else None
+
     with col_b:
         if selected_tag:
             cur = df[df["Tag"] == selected_tag]["Value"].values[0]
@@ -465,6 +475,7 @@ if st.session_state.ds is not None:
         else:
             default_val = ""
         new_value = st.text_input("New value", value=default_val)
+
 
     if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
         val = new_value.strip()
