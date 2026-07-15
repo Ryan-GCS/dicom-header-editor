@@ -25,7 +25,7 @@ def get_image_base64(path):
     except:
         return None
 
-logo_b64 = get_image_base64("SwiftMR Logo.png")
+logo_b64 = get_image_base64("logo.png")
 logo_html = (
     f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;">'
     if logo_b64 else "🏥"
