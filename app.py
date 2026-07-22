@@ -393,6 +393,69 @@ def apply_modifications_to_ds(ds, modifications: dict):
     ds_copy.save_as(output, write_like_original=True)
     return output.getvalue(), results
 
+def apply_staged_to_zip(zip_bytes: bytes, modifications: dict) -> tuple[bytes, list]:
+    """ZIP 내 모든 DICOM 파일에 staged 수정사항 일괄 적용"""
+    output_buf = io.BytesIO()
+    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
+    all_results = []
+    success_count = skip_count = error_count = 0
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as input_zip:
+        for filename in input_zip.namelist():
+            # 디렉토리 스킵
+            if filename.endswith("/"):
+                output_zip.writestr(filename, b"")
+                continue
+
+            file_bytes = input_zip.read(filename)
+            base = Path(filename).name
+
+            # macOS 메타파일 제외
+            if base.startswith("._") or base.startswith("."):
+                output_zip.writestr(filename, file_bytes)
+                skip_count += 1
+                continue
+
+            # DICOM 여부 확인
+            try:
+                ds = pydicom.dcmread(io.BytesIO(file_bytes), force=True)
+                if not is_valid_dicom_ds(ds):
+                    output_zip.writestr(filename, file_bytes)
+                    skip_count += 1
+                    continue
+            except Exception:
+                output_zip.writestr(filename, file_bytes)
+                skip_count += 1
+                continue
+
+            # 수정 적용
+            try:
+                modified_bytes, results = apply_modifications_to_ds(
+                    ds, modifications
+                )
+                for r in results:
+                    r["File"] = filename
+                all_results.extend(results)
+                output_zip.writestr(filename, modified_bytes)
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                all_results.append({
+                    "File": filename, "Tag": "-", "Keyword": "-",
+                    "Before": "-", "After": "-",
+                    "Status": f"❌ Failed: {e}",
+                })
+                output_zip.writestr(filename, file_bytes)
+
+    output_zip.close()
+    summary = {
+        "success": success_count,
+        "skipped": skip_count,
+        "errors":  error_count,
+        "total":   success_count + skip_count + error_count,
+    }
+    return output_buf.getvalue(), all_results, summary
+
 def process_zip(zip_bytes: bytes, modifications: dict):
     input_zip  = zipfile.ZipFile(io.BytesIO(zip_bytes))
     output_buf = io.BytesIO()
@@ -560,6 +623,9 @@ defaults = {
     "cmp_staged": {},
     "cmp_result_bytes": None,
     "cmp_ds_b": None,
+    "cmp_result_zip":     None,   
+    "cmp_result_summary": None,  
+    "cmp_result_log":     None,  
     # App
     "app_mode": "editor",
     "phi_confirmed_once": False,
@@ -1373,7 +1439,7 @@ else:
             for tag, val in st.session_state.cmp_staged.items():
                 orig = editable_df[editable_df["Tag"] == tag]["Value B"].values
                 staged_rows.append({
-                    "Tag": tag,
+                    "Tag":        tag,
                     "Original B": orig[0] if len(orig) else "-",
                     "New Value":  val,
                 })
@@ -1382,27 +1448,73 @@ else:
                 use_container_width=True, hide_index=True,
             )
 
+            # ── 다운로드 타입 선택 ────────────────────
+            has_zip_b = st.session_state.cmp_b_zip_bytes is not None
+
+            if has_zip_b:
+                dl_mode = st.radio(
+                    "Download target",
+                    [
+                        "📄 Single file (selected DCM only)",
+                        "📦 Full ZIP (apply to all files in ZIP B)",
+                    ],
+                    key="cmp_dl_mode",
+                    horizontal=True,
+                )
+            else:
+                dl_mode = "📄 Single file (selected DCM only)"
+
+            # ── 버튼 행 ──────────────────────────────
             ac1, ac2 = st.columns([1, 2])
             with ac1:
                 if st.button(
-                    "🗑️ Clear All Staged", use_container_width=True
+                    "🗑️ Clear All Staged",
+                    use_container_width=True,
                 ):
                     st.session_state.cmp_staged       = {}
                     st.session_state.cmp_result_bytes = None
+                    st.session_state.cmp_result_zip   = None
+                    st.session_state.cmp_result_summary = None
                     st.rerun()
-            with ac2:
-                if st.button(
-                    "🚀 Apply & Download",
-                    type="primary", use_container_width=True,
-                ):
-                    with st.spinner("Applying changes to File B..."):
-                        rb, _ = apply_modifications_to_ds(
-                            st.session_state.cmp_ds_b,
-                            st.session_state.cmp_staged,
-                        )
-                    st.session_state.cmp_result_bytes = rb
 
-            if st.session_state.cmp_result_bytes:
+            with ac2:
+                btn_label = (
+                    "🚀 Apply to All & Create ZIP"
+                    if has_zip_b and "Full ZIP" in dl_mode
+                    else "🚀 Apply & Download"
+                )
+                if st.button(
+                    btn_label,
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    if has_zip_b and "Full ZIP" in dl_mode:
+                        # ZIP 전체 일괄 적용
+                        with st.spinner(
+                            "Applying changes to all files in ZIP B..."
+                        ):
+                            rb, results, summary = apply_staged_to_zip(
+                                st.session_state.cmp_b_zip_bytes,
+                                st.session_state.cmp_staged,
+                            )
+                        st.session_state.cmp_result_zip     = rb
+                        st.session_state.cmp_result_bytes   = None
+                        st.session_state.cmp_result_summary = summary
+                        st.session_state.cmp_result_log     = results
+                    else:
+                        # 단일 파일 적용
+                        with st.spinner("Applying changes to File B..."):
+                            rb, results = apply_modifications_to_ds(
+                                st.session_state.cmp_ds_b,
+                                st.session_state.cmp_staged,
+                            )
+                        st.session_state.cmp_result_bytes   = rb
+                        st.session_state.cmp_result_zip     = None
+                        st.session_state.cmp_result_summary = None
+                        st.session_state.cmp_result_log     = results
+
+            # ── 단일 파일 다운로드 ────────────────────
+            if st.session_state.get("cmp_result_bytes"):
                 b_base = Path(st.session_state.cmp_b_name).stem
                 st.markdown(
                     '<div class="success-banner">'
@@ -1418,10 +1530,61 @@ else:
                     use_container_width=True,
                     type="primary",
                 )
-                # Change Log CSV
-                log_csv = pd.DataFrame(staged_rows).to_csv(
-                    index=False
-                ).encode("utf-8")
+
+            # ── ZIP 다운로드 ──────────────────────────
+            if st.session_state.get("cmp_result_zip"):
+                s = st.session_state.cmp_result_summary
+                st.markdown(
+                    '<div class="success-banner">'
+                    f"✅ ZIP ready! &nbsp;"
+                    f"Processed: {s['success']} &nbsp;·&nbsp; "
+                    f"Skipped: {s['skipped']} &nbsp;·&nbsp; "
+                    f"Errors: {s['errors']}"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # 메트릭
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1.metric("📁 Total",     s["total"])
+                mc2.metric("✅ Processed", s["success"])
+                mc3.metric("⏭️ Skipped",   s["skipped"])
+                mc4.metric("❌ Errors",    s["errors"])
+
+                zip_out_name = st.session_state.cmp_b_name.replace(
+                    ".zip", "_modified.zip"
+                )
+                st.download_button(
+                    label="⬇️ Download Modified ZIP",
+                    data=st.session_state.cmp_result_zip,
+                    file_name=zip_out_name,
+                    mime="application/zip",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+                # 상세 로그
+                if st.session_state.get("cmp_result_log"):
+                    with st.expander(
+                        "📊 Modification Report", expanded=False
+                    ):
+                        st.dataframe(
+                            pd.DataFrame(st.session_state.cmp_result_log),
+                            use_container_width=True,
+                            height=300,
+                            hide_index=True,
+                        )
+
+            # ── Change Log CSV ────────────────────────
+            if (
+                st.session_state.get("cmp_result_bytes")
+                or st.session_state.get("cmp_result_zip")
+            ):
+                log_csv = (
+                    pd.DataFrame(staged_rows)
+                    .to_csv(index=False)
+                    .encode("utf-8")
+                )
                 st.download_button(
                     label="⬇️ Download Change Log CSV",
                     data=log_csv,
