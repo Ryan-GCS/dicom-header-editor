@@ -130,13 +130,7 @@ st.markdown("""
     }
     .dl-target-title { color: #ffb74d !important; }
     .dl-target-desc  { color: #c8d0dc !important; }
-    .pending-card {
-        background: linear-gradient(135deg,#1a1f2e,#141820) !important;
-        border: 1px solid #2a3040 !important;
-    }
-    .pending-tag-row { border-bottom: 1px solid #1e2535 !important; }
-    .pending-tag-val { color: #8892a4 !important; }
-    .pending-tag-new { color: #00d4ff !important; }
+    .table-info-text { color: #8892a4 !important; }
 }
 @media (prefers-color-scheme: light) {
     .stApp { background-color: #f0f4f8 !important; }
@@ -219,13 +213,7 @@ st.markdown("""
     }
     .dl-target-title { color: #e65100 !important; }
     .dl-target-desc  { color: #3a4a5a !important; }
-    .pending-card {
-        background: linear-gradient(135deg,#ffffff,#f5f8ff) !important;
-        border: 1px solid #d0d8e8 !important;
-    }
-    .pending-tag-row { border-bottom: 1px solid #e0e8f0 !important; }
-    .pending-tag-val { color: #5a6a7a !important; }
-    .pending-tag-new { color: #0055cc !important; }
+    .table-info-text { color: #5a6a7a !important; }
 }
 
 /* 공통 */
@@ -331,15 +319,15 @@ st.markdown("""
     display:flex; align-items:center; gap:10px;
 }
 .dl-target-desc { font-size:13px; line-height:1.6; margin-top:8px; }
-.pending-card {
-    border-radius:12px; padding:16px 20px; margin-bottom:12px;
+.table-info-bar {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:6px; padding:4px 2px;
 }
-.pending-tag-row {
-    display:flex; align-items:center; gap:8px;
-    padding:6px 0; font-size:13px;
+.table-info-text { font-size:13px; }
+.page-label {
+    font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:6px;
 }
-.pending-tag-val { font-size:12px; }
-.pending-tag-new { font-weight:700; font-size:12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -634,12 +622,10 @@ def make_excel_diff(df: pd.DataFrame) -> bytes:
 # SESSION STATE
 # ══════════════════════════════════════════════════════
 defaults = {
-    # Editor
     "ds": None, "tags_df": None, "modifications": {},
     "filename": "", "modified_bytes": None, "mod_results": None,
     "upload_mode": None, "zip_bytes": None, "summary": None,
     "queue_msg": None,
-    # Compare
     "cmp_a_bytes": None, "cmp_a_name": "",
     "cmp_b_bytes": None, "cmp_b_name": "",
     "cmp_a_zip_bytes": None, "cmp_b_zip_bytes": None,
@@ -652,7 +638,6 @@ defaults = {
     "cmp_result_summary": None,
     "cmp_result_log":     None,
     "cmp_ds_b": None,
-    # App
     "app_mode": "editor",
     "phi_confirmed_once": False,
 }
@@ -736,7 +721,6 @@ else:
 # ══════════════════════════════════════════════════════
 if st.session_state.app_mode == "editor":
 
-    # ── 헤더 카드 ────────────────────────────────────
     st.markdown("""
     <div class="step-card" style="margin-bottom:24px;">
       <div class="step-header" style="gap:14px;">
@@ -755,7 +739,7 @@ if st.session_state.app_mode == "editor":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── STEP 1 : Upload ──────────────────────────────
+    # ── STEP 1 ───────────────────────────────────────
     st.markdown("""
     <div class="step-card">
       <div class="step-header">
@@ -771,9 +755,7 @@ if st.session_state.app_mode == "editor":
     )
 
     if "Single" in upload_mode:
-        uploaded = st.file_uploader(
-            "Upload a DICOM file", type=["dcm","DCM"]
-        )
+        uploaded = st.file_uploader("Upload a DICOM file", type=["dcm","DCM"])
         if uploaded:
             if uploaded.name != st.session_state.filename:
                 fb = uploaded.read()
@@ -805,8 +787,6 @@ if st.session_state.app_mode == "editor":
         if uploaded:
             if uploaded.name != st.session_state.filename:
                 zb = uploaded.read()
-                with zipfile.ZipFile(io.BytesIO(zb)) as zf:
-                    file_list = [f for f in zf.namelist() if not f.endswith("/")]
                 first_dcm_bytes = None
                 with zipfile.ZipFile(io.BytesIO(zb)) as zf:
                     for fname in zf.namelist():
@@ -835,12 +815,8 @@ if st.session_state.app_mode == "editor":
                     st.error("❌ No valid DICOM files found in ZIP.")
 
             if st.session_state.filename and st.session_state.tags_df:
-                with zipfile.ZipFile(
-                    io.BytesIO(st.session_state.zip_bytes)
-                ) as zf:
-                    file_list = [
-                        f for f in zf.namelist() if not f.endswith("/")
-                    ]
+                with zipfile.ZipFile(io.BytesIO(st.session_state.zip_bytes)) as zf:
+                    file_list = [f for f in zf.namelist() if not f.endswith("/")]
                 st.markdown(f"""
                 <div class="diff-banner-ok">
                     <div style="font-size:16px;font-weight:800;margin-bottom:4px;">
@@ -853,15 +829,13 @@ if st.session_state.app_mode == "editor":
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                with st.expander(
-                    f"📂 View {len(file_list)} files in ZIP", expanded=False
-                ):
+                with st.expander(f"📂 View {len(file_list)} files in ZIP", expanded=False):
                     st.dataframe(
                         pd.DataFrame({"File": file_list}),
                         hide_index=True, use_container_width=True,
                     )
 
-    # ── STEP 2 : View & Edit ─────────────────────────
+    # ── STEP 2 : View & Search ───────────────────────
     if st.session_state.ds is not None:
         st.markdown("""
         <div class="step-card">
@@ -871,11 +845,12 @@ if st.session_state.app_mode == "editor":
           </div>
         </div>""", unsafe_allow_html=True)
 
-        # 메트릭
-        df_all = pd.DataFrame(st.session_state.tags_df)
+        df_all    = pd.DataFrame(st.session_state.tags_df)
         n_total   = len(df_all)
-        n_private = df_all["Private"].sum()
+        n_private = int(df_all["Private"].sum())
         n_std     = n_total - n_private
+
+        # 메트릭 카드
         mc = st.columns(3)
         for col, (lbl, val, color) in zip(mc, [
             ("TOTAL TAGS",   n_total,   "#607d8b"),
@@ -897,21 +872,18 @@ if st.session_state.app_mode == "editor":
             search = st.text_input(
                 "Search",
                 placeholder="e.g. PatientName, 0010,0010, Siemens",
-                key="editor_search",
-                label_visibility="collapsed",
+                key="editor_search", label_visibility="collapsed",
             )
         with fs2:
             show_private = st.selectbox(
                 "Tag type",
                 ["All Tags", "Standard Only", "Private Only"],
-                key="editor_tag_type",
-                label_visibility="collapsed",
+                key="editor_tag_type", label_visibility="collapsed",
             )
         with fs3:
             ed_page_size = st.selectbox(
                 "Rows", [25, 50, 100, 200],
-                key="editor_page_size",
-                label_visibility="collapsed",
+                key="editor_page_size", label_visibility="collapsed",
             )
 
         df = df_all.copy()
@@ -929,39 +901,48 @@ if st.session_state.app_mode == "editor":
             )
             df = df[mask]
 
-        # 페이지네이션
         ed_total_pages = max(1, (len(df) - 1) // ed_page_size + 1)
-        ed_p1, ed_p2 = st.columns([4, 1])
-        with ed_p1:
-            st.caption(
-                f"Showing **{min(ed_page_size, len(df))}** of "
-                f"**{len(df)}** tags (total: {n_total})"
+
+        # ── Tag Table ─────────────────────────────────
+        st.markdown("### 🗂️ Tag Table")
+
+        # 테이블 바로 위: Showing 정보 + 페이지 컨트롤
+        tbl_c1, tbl_c2, tbl_c3 = st.columns([4, 1, 1])
+        with tbl_c1:
+            st.markdown(
+                f'<div class="table-info-text" style="padding-top:6px;">'
+                f'Showing <b>{min(ed_page_size, len(df))}</b> of '
+                f'<b>{len(df)}</b> tags &nbsp;·&nbsp; total: {n_total}'
+                f'</div>',
+                unsafe_allow_html=True,
             )
-        with ed_p2:
+        with tbl_c2:
+            st.markdown(
+                '<div style="text-align:right;padding-top:6px;font-size:13px;'
+                'font-weight:600;">Page</div>',
+                unsafe_allow_html=True,
+            )
+        with tbl_c3:
             ed_page = st.number_input(
-                f"Page (1–{ed_total_pages})",
+                f"/ {ed_total_pages}",
                 min_value=1, max_value=ed_total_pages, value=1,
                 key="editor_page",
-                label_visibility="collapsed",
+                label_visibility="visible",
             )
 
-        df_page = df.iloc[
+        df_page_ed = df.iloc[
             (ed_page - 1) * ed_page_size : ed_page * ed_page_size
         ].copy()
 
-        # 수정된 태그 하이라이트
         def highlight_modified_editor(row):
             if row["Tag"] in st.session_state.modifications:
                 return ["background-color:rgba(0,212,255,0.15)"] * len(row)
             return [""] * len(row)
 
-        st.markdown("### 🗂️ Tag Table")
         st.dataframe(
-            df_page.drop(columns=["Private"])
+            df_page_ed.drop(columns=["Private"])
             .style.apply(highlight_modified_editor, axis=1),
-            use_container_width=True,
-            height=420,
-            hide_index=True,
+            use_container_width=True, height=420, hide_index=True,
         )
 
         # ── STEP 3 : Edit ────────────────────────────
@@ -974,15 +955,14 @@ if st.session_state.app_mode == "editor":
         </div>""", unsafe_allow_html=True)
 
         st.caption(
-            "Select a tag from the filtered list below, "
+            "Select a tag from the filtered list, "
             "enter a new value, and click **Queue Change**."
         )
 
         col_a, col_b = st.columns([2, 3])
         with col_a:
             tag_options = [
-                f"{row['Tag']}  {row['Keyword']}"
-                for _, row in df.iterrows()
+                f"{row['Tag']}  {row['Keyword']}" for _, row in df.iterrows()
             ]
             selected_option = st.selectbox(
                 "Select tag to edit", tag_options, key="tag_select"
@@ -993,7 +973,7 @@ if st.session_state.app_mode == "editor":
         with col_b:
             if selected_tag:
                 cur = df[df["Tag"] == selected_tag]["Value"].values
-                cur_val = cur[0] if len(cur) else ""
+                cur_val     = cur[0] if len(cur) else ""
                 default_val = st.session_state.modifications.get(
                     selected_tag, cur_val
                 )
@@ -1001,24 +981,19 @@ if st.session_state.app_mode == "editor":
                 default_val = ""
             new_value = st.text_input("New value", value=default_val)
 
-        if st.button(
-            "📝 Queue Change", use_container_width=True, key="queue_btn"
-        ):
+        if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
             val = new_value.strip()
             if not selected_tag:
                 st.session_state.queue_msg = ("error", "Please select a tag.")
             elif not val:
-                st.session_state.queue_msg = (
-                    "error", "Please enter a new value."
-                )
+                st.session_state.queue_msg = ("error", "Please enter a new value.")
             else:
                 st.session_state.modifications[selected_tag] = val
                 st.session_state.modified_bytes = None
                 st.session_state.mod_results    = None
                 st.session_state.summary        = None
                 st.session_state.queue_msg = (
-                    "success",
-                    f"Queued: **{selected_tag}** → `{val}`",
+                    "success", f"Queued: **{selected_tag}** → `{val}`"
                 )
 
         if st.session_state.queue_msg:
@@ -1028,7 +1003,6 @@ if st.session_state.app_mode == "editor":
             else:
                 st.warning(m)
 
-        # Pending 목록
         if st.session_state.modifications:
             st.markdown("#### 📋 Pending Modifications")
             atdf     = pd.DataFrame(st.session_state.tags_df)
@@ -1088,12 +1062,9 @@ if st.session_state.app_mode == "editor":
             n_mods = len(st.session_state.modifications)
 
             if st.session_state.upload_mode == "single":
-                # Download Target 강조 박스
                 st.markdown(f"""
                 <div class="dl-target-box">
-                    <div class="dl-target-title">
-                        📄 Download Target
-                    </div>
+                    <div class="dl-target-title">📄 Download Target</div>
                     <div class="dl-target-desc">
                         <b>Mode:</b> Single DICOM file<br>
                         <b>File:</b> {st.session_state.filename}<br>
@@ -1104,13 +1075,11 @@ if st.session_state.app_mode == "editor":
                 """, unsafe_allow_html=True)
 
                 if st.button(
-                    "🚀 Apply Changes",
-                    type="primary", use_container_width=True,
+                    "🚀 Apply Changes", type="primary", use_container_width=True
                 ):
                     with st.spinner("Processing..."):
                         mb, results = apply_modifications_to_ds(
-                            st.session_state.ds,
-                            st.session_state.modifications,
+                            st.session_state.ds, st.session_state.modifications
                         )
                     st.session_state.modified_bytes = mb
                     st.session_state.mod_results    = results
@@ -1122,9 +1091,7 @@ if st.session_state.app_mode == "editor":
                     )
                 if st.session_state.modified_bytes:
                     st.markdown(
-                        '<div class="success-banner">'
-                        "✅ File ready for download!"
-                        "</div>",
+                        '<div class="success-banner">✅ File ready for download!</div>',
                         unsafe_allow_html=True,
                     )
                     st.download_button(
@@ -1132,27 +1099,17 @@ if st.session_state.app_mode == "editor":
                         data=st.session_state.modified_bytes,
                         file_name=f"modified_{st.session_state.filename}",
                         mime="application/octet-stream",
-                        use_container_width=True,
-                        type="primary",
+                        use_container_width=True, type="primary",
                     )
 
             elif st.session_state.upload_mode == "zip":
-                with zipfile.ZipFile(
-                    io.BytesIO(st.session_state.zip_bytes)
-                ) as zf:
-                    n_files = len(
-                        [f for f in zf.namelist() if not f.endswith("/")]
-                    )
-                zip_out = st.session_state.filename.replace(
-                    ".zip", "_modified.zip"
-                )
+                with zipfile.ZipFile(io.BytesIO(st.session_state.zip_bytes)) as zf:
+                    n_files = len([f for f in zf.namelist() if not f.endswith("/")])
+                zip_out = st.session_state.filename.replace(".zip", "_modified.zip")
 
-                # Download Target 강조 박스
                 st.markdown(f"""
                 <div class="dl-target-box">
-                    <div class="dl-target-title">
-                        📦 Download Target
-                    </div>
+                    <div class="dl-target-title">📦 Download Target</div>
                     <div class="dl-target-desc">
                         <b>Mode:</b> Batch ZIP — all DICOM files will be modified<br>
                         <b>File:</b> {st.session_state.filename}
@@ -1187,20 +1144,15 @@ if st.session_state.app_mode == "editor":
                         st.error("❌ No DICOM files were processed!")
 
                 if st.session_state.mod_results:
-                    with st.expander(
-                        "📊 Modification Report", expanded=False
-                    ):
+                    with st.expander("📊 Modification Report", expanded=False):
                         st.dataframe(
                             pd.DataFrame(st.session_state.mod_results),
-                            use_container_width=True,
-                            height=400, hide_index=True,
+                            use_container_width=True, height=400, hide_index=True,
                         )
 
                 if st.session_state.modified_bytes is not None:
                     st.markdown(
-                        '<div class="success-banner">'
-                        "✅ ZIP ready for download!"
-                        "</div>",
+                        '<div class="success-banner">✅ ZIP ready for download!</div>',
                         unsafe_allow_html=True,
                     )
                     st.download_button(
@@ -1208,8 +1160,7 @@ if st.session_state.app_mode == "editor":
                         data=st.session_state.modified_bytes,
                         file_name=zip_out,
                         mime="application/zip",
-                        use_container_width=True,
-                        type="primary",
+                        use_container_width=True, type="primary",
                     )
 
 # ══════════════════════════════════════════════════════
@@ -1277,13 +1228,10 @@ else:
                 f"✅ File A ZIP: "
                 f"{len(st.session_state.cmp_a_zip_list)} DICOM files found"
             )
-            name_map_a = {
-                Path(p).name: p for p in st.session_state.cmp_a_zip_list
-            }
+            name_map_a = {Path(p).name: p for p in st.session_state.cmp_a_zip_list}
             sel_a_display = st.selectbox(
                 "📄 Select DICOM from File A ZIP",
-                list(name_map_a.keys()),
-                key="cmp_a_sel_box",
+                list(name_map_a.keys()), key="cmp_a_sel_box",
             )
             sel_a = name_map_a[sel_a_display]
             if sel_a != st.session_state.cmp_a_sel:
@@ -1336,13 +1284,10 @@ else:
                 f"✅ File B ZIP: "
                 f"{len(st.session_state.cmp_b_zip_list)} DICOM files found"
             )
-            name_map_b = {
-                Path(p).name: p for p in st.session_state.cmp_b_zip_list
-            }
+            name_map_b = {Path(p).name: p for p in st.session_state.cmp_b_zip_list}
             sel_b_display = st.selectbox(
                 "📄 Select DICOM from File B ZIP",
-                list(name_map_b.keys()),
-                key="cmp_b_sel_box",
+                list(name_map_b.keys()), key="cmp_b_sel_box",
             )
             sel_b = name_map_b[sel_b_display]
             if sel_b != st.session_state.cmp_b_sel:
@@ -1363,9 +1308,7 @@ else:
     st.markdown("<br>", unsafe_allow_html=True)
 
     if can_compare:
-        if st.button(
-            "🔍 Run Comparison", type="primary", use_container_width=True
-        ):
+        if st.button("🔍 Run Comparison", type="primary", use_container_width=True):
             with st.spinner("Comparing DICOM headers..."):
                 ds_a = parse_dicom(st.session_state.cmp_a_bytes)
                 ds_b = parse_dicom(st.session_state.cmp_b_bytes)
@@ -1445,7 +1388,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # Filter & Search
+        # ── Filter & Search ───────────────────────────
         st.markdown("### 🔎 Filter & Search")
         fs1, fs2, fs3 = st.columns([3, 2, 1])
         with fs1:
@@ -1488,26 +1431,40 @@ else:
             df_view = df_view[mask]
 
         total_pages = max(1, (len(df_view) - 1) // page_size + 1)
-        cp1, cp2 = st.columns([4, 1])
-        with cp1:
-            st.caption(
-                f"Showing **{min(page_size, len(df_view))}** of "
-                f"**{len(df_view)}** filtered rows (total: {n_total})"
-            )
-        with cp2:
-            page = st.number_input(
-                f"Page (1–{total_pages})",
-                min_value=1, max_value=total_pages, value=1,
-                key="cmp_page",
-                label_visibility="collapsed",
-            )
 
-        # Comparison Table
+        # ── Comparison Table ──────────────────────────
         st.markdown("### 🗂️ Comparison Table")
         st.caption(
             "✏️ **Inline Edit:** Expand a tag in the section below "
             "to edit its value in File B. Pixel Data (7FE0,0010) is protected."
         )
+
+        # 테이블 바로 위: Showing 정보 + 페이지 컨트롤
+        tbl_c1, tbl_c2, tbl_c3 = st.columns([4, 1, 1])
+        with tbl_c1:
+            st.markdown(
+                f'<div class="table-info-text" style="padding-top:6px;">'
+                f'Showing <b>{min(page_size, len(df_view))}</b> of '
+                f'<b>{len(df_view)}</b> filtered rows &nbsp;·&nbsp; total: {n_total}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with tbl_c2:
+            st.markdown(
+                '<div style="text-align:right;padding-top:6px;font-size:13px;'
+                'font-weight:600;">Page</div>',
+                unsafe_allow_html=True,
+            )
+        with tbl_c3:
+            page = st.number_input(
+                f"/ {total_pages}",
+                min_value=1, max_value=total_pages, value=1,
+                key="cmp_page", label_visibility="visible",
+            )
+
+        df_page = df_view.iloc[
+            (page - 1) * page_size : page * page_size
+        ].copy()
 
         STATUS_COLORS = {
             "diff":   "rgba(255,152,0,0.15)",
@@ -1521,10 +1478,6 @@ else:
             "only_b": "🟣 Only B",
             "match":  "✅ match",
         }
-
-        df_page = df_view.iloc[
-            (page - 1) * page_size : page * page_size
-        ].copy()
 
         df_display = df_page[
             ["Tag","Keyword","VR","Value A","Value B","Status"]
@@ -1548,12 +1501,10 @@ else:
         st.markdown("---")
         st.markdown("### ✏️ Inline Edit — Apply Changes to File B")
 
-        # 필터 탭
         edit_filter = st.radio(
             "Show tags",
             ["⚠️ Different", "🔵 Only in A", "🟣 Only in B", "📋 All"],
-            horizontal=True,
-            key="inline_edit_filter",
+            horizontal=True, key="inline_edit_filter",
         )
 
         edit_status_map = {
@@ -1570,7 +1521,6 @@ else:
 
         st.caption(
             f"Showing **{len(editable_df)}** editable tag(s) · "
-            "Select tags below to edit their values in File B. "
             "Changes are staged and applied together when you click "
             "**Apply & Download**."
         )
@@ -1640,7 +1590,6 @@ else:
                 unsafe_allow_html=True,
             )
         else:
-            # Staged 목록
             staged_rows = []
             all_editable = df_full[
                 df_full["Status"].isin(["diff","only_a","only_b"])
@@ -1657,7 +1606,6 @@ else:
                 use_container_width=True, hide_index=True,
             )
 
-            # ── Download Target 강조 박스 ─────────────
             has_zip_b = st.session_state.cmp_b_zip_bytes is not None
 
             if has_zip_b:
@@ -1667,29 +1615,26 @@ else:
                         "📄 Single file — selected DCM only",
                         "📦 Full ZIP — apply to ALL files in ZIP B",
                     ],
-                    key="cmp_dl_mode",
-                    horizontal=True,
+                    key="cmp_dl_mode", horizontal=True,
                     label_visibility="collapsed",
                 )
                 is_zip_mode = "Full ZIP" in dl_mode
             else:
                 is_zip_mode = False
-                dl_mode     = "📄 Single file — selected DCM only"
 
             n_staged = len(st.session_state.cmp_staged)
 
             if is_zip_mode:
-                n_zip_files = len(st.session_state.cmp_b_zip_list)
+                n_zip_files  = len(st.session_state.cmp_b_zip_list)
                 zip_out_name = st.session_state.cmp_b_name.replace(
                     ".zip", "_modified.zip"
                 )
                 st.markdown(f"""
                 <div class="dl-target-box">
-                    <div class="dl-target-title">
-                        📦 Download Target — Full ZIP
-                    </div>
+                    <div class="dl-target-title">📦 Download Target — Full ZIP</div>
                     <div class="dl-target-desc">
-                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files in ZIP B will be modified<br>
+                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files
+                        in ZIP B will be modified<br>
                         <b>Source ZIP:</b> {st.session_state.cmp_b_name}<br>
                         <b>Changes:</b> {n_staged} tag(s) applied to every DICOM file<br>
                         <b>Output:</b> {zip_out_name}
@@ -1701,9 +1646,7 @@ else:
                 b_sel  = st.session_state.cmp_b_sel or st.session_state.cmp_b_name
                 st.markdown(f"""
                 <div class="dl-target-box">
-                    <div class="dl-target-title">
-                        📄 Download Target — Single DCM
-                    </div>
+                    <div class="dl-target-title">📄 Download Target — Single DCM</div>
                     <div class="dl-target-desc">
                         <b>Mode:</b> Single file only<br>
                         <b>File:</b> {b_sel}<br>
@@ -1713,7 +1656,6 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # 버튼
             ac1, ac2 = st.columns([1, 2])
             with ac1:
                 if st.button("🗑️ Clear All Staged", use_container_width=True):
@@ -1725,18 +1667,18 @@ else:
                     st.rerun()
 
             with ac2:
+                n_zip_files = (
+                    len(st.session_state.cmp_b_zip_list) if is_zip_mode else 0
+                )
                 btn_label = (
-                    f"🚀 Apply to All {n_zip_files if is_zip_mode else ''} Files & Create ZIP"
+                    f"🚀 Apply to All {n_zip_files} Files & Create ZIP"
                     if is_zip_mode
                     else "🚀 Apply & Download Single DCM"
                 )
-                if st.button(
-                    btn_label, type="primary", use_container_width=True
-                ):
+                if st.button(btn_label, type="primary", use_container_width=True):
                     if is_zip_mode:
                         with st.spinner(
-                            f"Applying {n_staged} change(s) to all "
-                            f"files in ZIP B..."
+                            f"Applying {n_staged} change(s) to all files in ZIP B..."
                         ):
                             rb, results, summary = apply_staged_to_zip(
                                 st.session_state.cmp_b_zip_bytes,
@@ -1771,8 +1713,7 @@ else:
                     data=st.session_state.cmp_result_bytes,
                     file_name=f"{b_base}_modified.dcm",
                     mime="application/octet-stream",
-                    use_container_width=True,
-                    type="primary",
+                    use_container_width=True, type="primary",
                 )
 
             # ZIP 다운로드
@@ -1801,14 +1742,11 @@ else:
                     data=st.session_state.cmp_result_zip,
                     file_name=zip_out_name,
                     mime="application/zip",
-                    use_container_width=True,
-                    type="primary",
+                    use_container_width=True, type="primary",
                 )
 
                 if st.session_state.cmp_result_log:
-                    with st.expander(
-                        "📊 Modification Report", expanded=False
-                    ):
+                    with st.expander("📊 Modification Report", expanded=False):
                         st.dataframe(
                             pd.DataFrame(st.session_state.cmp_result_log),
                             use_container_width=True,
