@@ -1241,7 +1241,7 @@ else:
             f"**{len(df_view)}** filtered rows (total: {n_total})"
         )
 
-        # ── Comparison Table ─────────────────────────
+         # ── Comparison Table ─────────────────────────
         st.markdown("### 🗂️ Comparison Table")
         st.caption(
             "✏️ **Inline Edit:** Expand a row below to edit the value "
@@ -1261,29 +1261,41 @@ else:
             "match":  "✅ match",
         }
 
-        def color_rows(row):
-            c = STATUS_COLORS.get(row["Status"], "")
-            return [f"background-color:{c}"] * len(row)
-
         total_pages = max(1, (len(df_view) - 1) // page_size + 1)
         page = st.number_input(
             f"Page (1–{total_pages})",
             min_value=1, max_value=total_pages, value=1,
             key="cmp_page",
         )
+
+        # ✅ 핵심 수정: Status 컬럼 유지한 채로 표시용 df 따로 생성
         df_page = df_view.iloc[
             (page - 1) * page_size : page * page_size
         ].copy()
-        df_page["Diff"] = df_page["Status"].map(STATUS_ICONS)
+
+        # 표시용 df (Status 컬럼 포함 → 색상 적용 후 → Diff 컬럼으로 rename)
+        df_display = df_page[
+            ["Tag", "Keyword", "VR", "Value A", "Value B", "Status"]
+        ].copy()
+        df_display["Diff"] = df_display["Status"].map(STATUS_ICONS)
+
+        def color_rows(row):
+            c = STATUS_COLORS.get(row["Status"], "")
+            return [f"background-color:{c}"] * len(row)
+
+        # 색상 적용 후 Status 숨기고 Diff만 표시
+        styled = (
+            df_display.style
+            .apply(color_rows, axis=1)
+            .hide(subset=["Status"], axis="columns")  # Status 컬럼 숨김
+        )
 
         st.dataframe(
-            df_page[["Tag","Keyword","VR","Value A","Value B","Diff"]]
-            .style.apply(color_rows, axis=1),
+            styled,
             use_container_width=True,
             height=420,
             hide_index=True,
         )
-
         # ── Inline Edit (Expander 방식) ───────────────
         st.markdown("---")
         st.markdown("### ✏️ Inline Edit — Apply Changes to File B")
