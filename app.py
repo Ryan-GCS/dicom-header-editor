@@ -55,8 +55,6 @@ st.markdown("""
     .cat3-header { background: linear-gradient(135deg,rgba(0,180,255,0.12),rgba(0,100,200,0.08)) !important; border: 1px solid rgba(0,180,255,0.3) !important; }
     .no-mfr-box  { background: rgba(255,180,0,0.08) !important; border: 1px solid rgba(255,180,0,0.3) !important; }
     .std-info-box { background: rgba(0,212,255,0.05) !important; border: 1px solid rgba(0,212,255,0.15) !important; }
-    .mode-btn-active { background: linear-gradient(135deg,rgba(0,212,255,0.2),rgba(0,102,255,0.15)) !important; border: 2px solid #00d4ff !important; }
-    .mode-btn { background: rgba(255,255,255,0.03) !important; border: 1px solid #2a3040 !important; }
     .diff-match { background: rgba(0,200,100,0.08) !important; }
     .diff-diff  { background: rgba(255,140,0,0.15) !important; border-left: 3px solid #ff8c00 !important; }
     .diff-only-a { background: rgba(0,212,255,0.10) !important; border-left: 3px solid #00d4ff !important; }
@@ -81,8 +79,6 @@ st.markdown("""
     .cat3-header { background: linear-gradient(135deg,rgba(0,180,255,0.08),rgba(0,100,200,0.05)) !important; border: 1px solid rgba(0,180,255,0.3) !important; }
     .no-mfr-box  { background: rgba(255,180,0,0.06) !important; border: 1px solid rgba(255,180,0,0.3) !important; }
     .std-info-box { background: rgba(0,100,200,0.04) !important; border: 1px solid rgba(0,100,200,0.12) !important; }
-    .mode-btn-active { background: linear-gradient(135deg,rgba(0,102,255,0.15),rgba(0,60,200,0.10)) !important; border: 2px solid #0066ff !important; }
-    .mode-btn { background: rgba(0,0,0,0.02) !important; border: 1px solid #d0d8e8 !important; }
     .diff-match { background: rgba(0,180,100,0.06) !important; }
     .diff-diff  { background: rgba(255,140,0,0.12) !important; border-left: 3px solid #ff8c00 !important; }
     .diff-only-a { background: rgba(0,100,200,0.08) !important; border-left: 3px solid #0066ff !important; }
@@ -113,16 +109,6 @@ st.markdown("""
 .cat3-header { border-radius:12px; padding:14px 20px; margin-bottom:12px; }
 .no-mfr-box  { border-radius:12px; padding:16px 20px; margin-bottom:12px; }
 .std-info-box { border-radius:10px; padding:12px 16px; margin-bottom:12px; font-size:12px; }
-.mode-selector { display:flex; gap:12px; margin-bottom:24px; }
-.mode-btn { border-radius:14px; padding:18px 24px; cursor:pointer; transition:all .2s; flex:1; }
-.mode-btn-active { border-radius:14px; padding:18px 24px; cursor:pointer; flex:1; }
-.mode-btn-title { font-size:16px; font-weight:800; margin-bottom:4px; }
-.mode-btn-desc  { font-size:12px; opacity:0.7; }
-.diff-summary-box { border-radius:14px; padding:20px 24px; margin-bottom:20px; }
-.diff-match { border-radius:6px; padding:2px 4px; }
-.diff-diff  { border-radius:6px; padding:2px 4px; }
-.diff-only-a { border-radius:6px; padding:2px 4px; }
-.diff-only-b { border-radius:6px; padding:2px 4px; }
 .diff-legend { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .diff-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
 .diff-legend-dot { width:12px; height:12px; border-radius:3px; }
@@ -141,15 +127,15 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════
-# DICOM Standard 기반 검증 엔진
+# DICOM Standard 검증 엔진
 # ════════════════════════════════════════════════════
 VR_RULES = {
     'DS': {'cast': float, 'max_len': 16,   'desc': 'Decimal String'},
     'IS': {'cast': int,   'max_len': 12,   'range': (-2**31, 2**31-1), 'desc': 'Integer String'},
-    'US': {'cast': int,   'range': (0, 65535),      'desc': 'Unsigned Short'},
-    'SS': {'cast': int,   'range': (-32768, 32767),  'desc': 'Signed Short'},
-    'UL': {'cast': int,   'range': (0, 2**32-1),    'desc': 'Unsigned Long'},
-    'SL': {'cast': int,   'range': (-2**31, 2**31-1),'desc': 'Signed Long'},
+    'US': {'cast': int,   'range': (0, 65535),       'desc': 'Unsigned Short'},
+    'SS': {'cast': int,   'range': (-32768, 32767),   'desc': 'Signed Short'},
+    'UL': {'cast': int,   'range': (0, 2**32-1),     'desc': 'Unsigned Long'},
+    'SL': {'cast': int,   'range': (-2**31, 2**31-1), 'desc': 'Signed Long'},
     'FL': {'cast': float, 'desc': 'Floating Point Single'},
     'FD': {'cast': float, 'desc': 'Floating Point Double'},
     'CS': {'cast': str,   'max_len': 16,   'desc': 'Code String'},
@@ -289,11 +275,11 @@ def validate_value_full(tag_tuple, elem):
                 if len(values) > check_idx:
                     v_str = str(values[check_idx]).strip().upper()
                     if v_str not in enum_spec['values']:
-                        return False, f"Enum violation [{enum_spec['desc']}]: value[{check_idx}]='{v_str}' not valid. Allowed: {sorted(enum_spec['values'])}", std or {}
+                        return False, f"Enum violation [{enum_spec['desc']}]: value[{check_idx}]='{v_str}' not valid.", std or {}
             else:
                 v_str = str(values[0]).strip().upper() if values else ""
                 if v_str not in enum_spec['values']:
-                    return False, f"Enum violation [{enum_spec['desc']}]: '{v_str}' not valid. Allowed: {sorted(enum_spec['values'])}", std or {}
+                    return False, f"Enum violation [{enum_spec['desc']}]: '{v_str}' not valid.", std or {}
         special = SPECIAL_RULES.get(tag_tuple)
         if special:
             try:
@@ -450,31 +436,40 @@ def is_valid_dicom(data: bytes) -> bool:
     except Exception:
         return False
 
-def load_files_from_upload(uploaded_file):
+def extract_dcm_from_upload(uploaded_file):
+    """
+    단일 .dcm  → {filename: bytes}
+    .zip       → {file1: bytes, file2: bytes, ...}
+    """
     file_dict = {}
     name = uploaded_file.name.lower()
+    data = uploaded_file.read()
+
     if name.endswith(".zip"):
-        with zipfile.ZipFile(io.BytesIO(uploaded_file.read())) as zf:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                zname    = info.filename
-                basename = Path(zname).name
+                basename = Path(info.filename).name
                 if basename.startswith("__") or basename.startswith(".") or basename == "":
                     continue
-                zl = zname.lower()
+                zl = info.filename.lower()
                 if zl.endswith(".dcm") or zl.endswith(".dicom"):
-                    file_dict[basename] = zf.read(zname)
+                    file_dict[basename] = zf.read(info.filename)
                 elif "." not in basename:
                     try:
-                        data = zf.read(zname)
-                        if is_valid_dicom(data):
-                            file_dict[basename] = data
+                        raw = zf.read(info.filename)
+                        if is_valid_dicom(raw):
+                            file_dict[basename] = raw
                     except Exception:
                         pass
     else:
-        file_dict[uploaded_file.name] = uploaded_file.read()
+        file_dict[uploaded_file.name] = data
+
     return file_dict
+
+def load_files_from_upload(uploaded_file):
+    return extract_dcm_from_upload(uploaded_file)
 
 # ════════════════════════════════════════════════════
 # Validation (Mode 1)
@@ -577,7 +572,6 @@ def validate_single_file(fname, file_bytes):
 # DIFF Engine (Mode 2)
 # ════════════════════════════════════════════════════
 def get_all_tags_flat(ds):
-    """ds의 모든 태그를 {tag_str: display_value} dict로 반환"""
     result = {}
     for elem in ds:
         try:
@@ -587,37 +581,32 @@ def get_all_tags_flat(ds):
             if val is None:
                 val = ""
             result[tag_str] = {
-                "value":   val,
-                "keyword": elem.keyword or keyword_for_tag(elem.tag) or "—",
-                "vr":      elem.VR,
+                "value":     val,
+                "keyword":   elem.keyword or keyword_for_tag(elem.tag) or "—",
+                "vr":        elem.VR,
                 "tag_tuple": tag_tuple,
-                "elem":    elem,
+                "elem":      elem,
             }
         except Exception:
             pass
     return result
 
 def compare_dicom(ds_a, ds_b):
-    """
-    두 DICOM 비교
-    반환: list of dict
-    diff_type: 'match' | 'diff' | 'only_a' | 'only_b'
-    """
-    tags_a = get_all_tags_flat(ds_a)
-    tags_b = get_all_tags_flat(ds_b)
+    tags_a   = get_all_tags_flat(ds_a)
+    tags_b   = get_all_tags_flat(ds_b)
     all_tags = sorted(set(list(tags_a.keys()) + list(tags_b.keys())))
     rows = []
     for tag_str in all_tags:
-        in_a = tag_str in tags_a
-        in_b = tag_str in tags_b
+        in_a   = tag_str in tags_a
+        in_b   = tag_str in tags_b
         info_a = tags_a.get(tag_str, {})
         info_b = tags_b.get(tag_str, {})
-        keyword = info_a.get("keyword") or info_b.get("keyword") or "—"
-        vr      = info_a.get("vr") or info_b.get("vr") or "—"
-        val_a   = info_a.get("value", "")
-        val_b   = info_b.get("value", "")
+        keyword   = info_a.get("keyword") or info_b.get("keyword") or "—"
+        vr        = info_a.get("vr") or info_b.get("vr") or "—"
+        val_a     = info_a.get("value", "")
+        val_b     = info_b.get("value", "")
         tag_tuple = info_a.get("tag_tuple") or info_b.get("tag_tuple")
-        std = get_std_info(tag_tuple) if tag_tuple else None
+        std       = get_std_info(tag_tuple) if tag_tuple else None
         if in_a and in_b:
             diff_type = "match" if val_a == val_b else "diff"
         elif in_a:
@@ -625,25 +614,25 @@ def compare_dicom(ds_a, ds_b):
         else:
             diff_type = "only_b"
         rows.append({
-            "Tag":      tag_str,
-            "Keyword":  keyword,
-            "VR":       vr,
-            "Std Name": std['name'] if std else "—",
-            "Value A":  val_a if in_a else "— NOT PRESENT —",
-            "Value B":  val_b if in_b else "— NOT PRESENT —",
-            "Diff":     diff_type,
+            "Tag":        tag_str,
+            "Keyword":    keyword,
+            "VR":         vr,
+            "Std Name":   std['name'] if std else "—",
+            "Value A":    val_a if in_a else "— NOT PRESENT —",
+            "Value B":    val_b if in_b else "— NOT PRESENT —",
+            "Diff":       diff_type,
             "_tag_tuple": tag_tuple,
-            "_in_a":    in_a,
-            "_in_b":    in_b,
+            "_in_a":      in_a,
+            "_in_b":      in_b,
         })
     return rows
 
 def diff_summary(rows):
-    total   = len(rows)
-    match   = sum(1 for r in rows if r["Diff"] == "match")
-    diff    = sum(1 for r in rows if r["Diff"] == "diff")
-    only_a  = sum(1 for r in rows if r["Diff"] == "only_a")
-    only_b  = sum(1 for r in rows if r["Diff"] == "only_b")
+    total  = len(rows)
+    match  = sum(1 for r in rows if r["Diff"] == "match")
+    diff   = sum(1 for r in rows if r["Diff"] == "diff")
+    only_a = sum(1 for r in rows if r["Diff"] == "only_a")
+    only_b = sum(1 for r in rows if r["Diff"] == "only_b")
     return total, match, diff, only_a, only_b
 
 # ════════════════════════════════════════════════════
@@ -762,19 +751,17 @@ def excel_export(df, summary_df=None):
     return buf.getvalue()
 
 def save_modified_dicom(ds, changes: dict) -> bytes:
-    """changes: {tag_str: new_value_str} 적용 후 bytes 반환"""
     ds_copy = copy.deepcopy(ds)
     for tag_str, new_val in changes.items():
         try:
-            g = int(tag_str[1:5], 16)
-            e = int(tag_str[6:10], 16)
+            g   = int(tag_str[1:5], 16)
+            e   = int(tag_str[6:10], 16)
             tag = pydicom.tag.Tag(g, e)
+            if tag == pydicom.tag.Tag(0x7FE0, 0x0010):
+                continue
             if tag in ds_copy:
                 elem = ds_copy[tag]
                 vr   = elem.VR
-                # Pixel Data 보호
-                if tag == pydicom.tag.Tag(0x7FE0, 0x0010):
-                    continue
                 if vr in ('DS', 'FL', 'FD'):
                     if '\\' in new_val or ',' in new_val:
                         parts = [p.strip() for p in new_val.replace('\\', ',').split(',')]
@@ -896,7 +883,7 @@ if st.session_state.mode == "validate":
         total_fail    = len(fail_results)
         total_error   = len(error_results)
 
-        # Overall Summary
+        # ── Overall Summary ───────────────────────────
         st.markdown("""
         <div class="section-card">
           <div class="section-title">
@@ -944,7 +931,7 @@ if st.session_state.mode == "validate":
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Most Problematic
+        # ── Most Problematic ─────────────────────────
         if worst_files:
             st.markdown("""
             <div class="section-card">
@@ -977,8 +964,9 @@ if st.session_state.mode == "validate":
                     </div>
                     <div style="font-size:12px;opacity:0.8;line-height:1.8;">
                         🏭 <b>{r['mfr_raw']}</b>
-                        &nbsp;·&nbsp; Cat.1 Mandatory: {r['c1m_valid']}/{r['c1m_total']}
-                        &nbsp;·&nbsp; Invalid: {r['c1m_invalid']} &nbsp;·&nbsp; Missing: {r['c1m_missing']}
+                        &nbsp;·&nbsp; Cat.1: {r['c1m_valid']}/{r['c1m_total']}
+                        &nbsp;·&nbsp; Invalid: {r['c1m_invalid']}
+                        &nbsp;·&nbsp; Missing: {r['c1m_missing']}
                         &nbsp;·&nbsp; Cat.2: {r['c2_valid']}/{r['c2_total']}
                         &nbsp;·&nbsp; Cat.3: {cat3_label}
                     </div>
@@ -998,7 +986,7 @@ if st.session_state.mode == "validate":
             </div>
             """, unsafe_allow_html=True)
 
-        # File Detail
+        # ── File Detail ───────────────────────────────
         st.markdown("""
         <div class="section-card">
           <div class="section-title">
@@ -1148,7 +1136,7 @@ if st.session_state.mode == "validate":
                 </div>
                 """, unsafe_allow_html=True)
 
-        # Export
+        # ── Export ────────────────────────────────────
         st.markdown("""
         <div class="section-card">
           <div class="section-title">
@@ -1221,12 +1209,13 @@ else:
         Compare Mode — Side-by-Side DICOM Diff
       </div>
       <div style="font-size:13px;opacity:0.7;margin-top:-8px;">
-        Upload two DICOM files to compare all tags · Highlighted differences · Inline value editing
+        Upload two DICOM files (or ZIP archives) to compare all tags ·
+        Highlighted differences · Inline value editing
       </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Upload 2 files ────────────────────────────────
+    # ── Upload ────────────────────────────────────────
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown("""
@@ -1236,7 +1225,11 @@ else:
             <span style="font-size:12px;opacity:0.7;margin-left:8px;">Reference / Source</span>
         </div>
         """, unsafe_allow_html=True)
-        file_a = st.file_uploader("Upload File A (.dcm)", type=["dcm","DCM"], key="cmp_a")
+        file_a = st.file_uploader(
+            "Upload File A (.dcm or .zip)",
+            type=["dcm","DCM","zip","ZIP"],
+            key="cmp_a"
+        )
 
     with col_b:
         st.markdown("""
@@ -1246,33 +1239,81 @@ else:
             <span style="font-size:12px;opacity:0.7;margin-left:8px;">Target / Modified</span>
         </div>
         """, unsafe_allow_html=True)
-        file_b = st.file_uploader("Upload File B (.dcm)", type=["dcm","DCM"], key="cmp_b")
+        file_b = st.file_uploader(
+            "Upload File B (.dcm or .zip)",
+            type=["dcm","DCM","zip","ZIP"],
+            key="cmp_b"
+        )
 
-    if file_a and file_b:
+    # ── ZIP 추출 & 파일 선택 ──────────────────────────
+    ds_a, ds_b     = None, None
+    sel_name_a     = None
+    sel_name_b     = None
+    dict_a, dict_b = {}, {}
+
+    if file_a:
+        dict_a = extract_dcm_from_upload(file_a)
+        if not dict_a:
+            st.error("❌ File A: No valid DICOM files found.")
+        elif len(dict_a) == 1:
+            sel_name_a = list(dict_a.keys())[0]
+            st.success(f"✅ File A loaded: **{sel_name_a}**")
+        else:
+            st.success(f"✅ File A ZIP: **{len(dict_a)}** DICOM files found")
+            sel_name_a = st.selectbox(
+                "📄 Select DICOM from File A ZIP",
+                options=sorted(dict_a.keys()),
+                key="sel_a"
+            )
+
+    if file_b:
+        dict_b = extract_dcm_from_upload(file_b)
+        if not dict_b:
+            st.error("❌ File B: No valid DICOM files found.")
+        elif len(dict_b) == 1:
+            sel_name_b = list(dict_b.keys())[0]
+            st.success(f"✅ File B loaded: **{sel_name_b}**")
+        else:
+            st.success(f"✅ File B ZIP: **{len(dict_b)}** DICOM files found")
+            sel_name_b = st.selectbox(
+                "📄 Select DICOM from File B ZIP",
+                options=sorted(dict_b.keys()),
+                key="sel_b"
+            )
+
+    # ── ds 로드 ───────────────────────────────────────
+    if sel_name_a and dict_a:
+        try:
+            ds_a = pydicom.dcmread(io.BytesIO(dict_a[sel_name_a]), force=True)
+        except Exception as e:
+            st.error(f"❌ Failed to read File A ({sel_name_a}): {e}")
+            ds_a = None
+
+    if sel_name_b and dict_b:
+        try:
+            ds_b = pydicom.dcmread(io.BytesIO(dict_b[sel_name_b]), force=True)
+        except Exception as e:
+            st.error(f"❌ Failed to read File B ({sel_name_b}): {e}")
+            ds_b = None
+
+    # ── Compare ───────────────────────────────────────
+    if ds_a and ds_b:
         with st.spinner("🔍 Comparing DICOM files..."):
-            try:
-                ds_a = pydicom.dcmread(io.BytesIO(file_a.read()), force=True)
-                ds_b = pydicom.dcmread(io.BytesIO(file_b.read()), force=True)
-            except Exception as e:
-                st.error(f"❌ Failed to read DICOM files: {e}")
-                st.stop()
-
             diff_rows = compare_dicom(ds_a, ds_b)
             total, match, diff, only_a, only_b = diff_summary(diff_rows)
 
-        # ── Diff Summary ──────────────────────────────
+        # Summary Banner
         st.markdown("<br>", unsafe_allow_html=True)
-
         if diff == 0 and only_a == 0 and only_b == 0:
-            banner_cls = "overall-pass"
-            banner_icon = "✅"
+            banner_cls   = "overall-pass"
+            banner_icon  = "✅"
             banner_title = "IDENTICAL"
-            banner_sub = "Both DICOM files have exactly the same tag values."
+            banner_sub   = "Both DICOM files have exactly the same tag values."
         else:
-            banner_cls = "overall-warning"
-            banner_icon = "⚠️"
+            banner_cls   = "overall-warning"
+            banner_icon  = "⚠️"
             banner_title = f"{diff + only_a + only_b} DIFFERENCE(S) FOUND"
-            banner_sub = f"Value differences: {diff} · Only in A: {only_a} · Only in B: {only_b}"
+            banner_sub   = f"Value differences: {diff} · Only in A: {only_a} · Only in B: {only_b}"
 
         st.markdown(f"""
         <div class="summary-card {banner_cls}">
@@ -1284,11 +1325,11 @@ else:
         # Metric cards
         mc1,mc2,mc3,mc4,mc5 = st.columns(5)
         for col,val,label,color in [
-            (mc1, str(total),  "Total Tags",      "#00d4ff"),
-            (mc2, str(match),  "✅ Identical",    "#00c864"),
-            (mc3, str(diff),   "⚠️ Different",   "#ff8c00"),
-            (mc4, str(only_a), "🔵 Only in A",   "#00d4ff"),
-            (mc5, str(only_b), "🟣 Only in B",   "#a070ff"),
+            (mc1, str(total),  "Total Tags",    "#00d4ff"),
+            (mc2, str(match),  "✅ Identical",  "#00c864"),
+            (mc3, str(diff),   "⚠️ Different", "#ff8c00"),
+            (mc4, str(only_a), "🔵 Only in A", "#00d4ff"),
+            (mc5, str(only_b), "🟣 Only in B", "#a070ff"),
         ]:
             with col:
                 st.markdown(f"""
@@ -1299,7 +1340,7 @@ else:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # ── Legend ────────────────────────────────────
+        # Legend
         st.markdown("""
         <div class="diff-legend">
             <div class="diff-legend-item">
@@ -1321,13 +1362,21 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Filter Controls ───────────────────────────
+        # ── Filter & Search ───────────────────────────
         st.markdown("#### 🔎 Filter & Search")
         fc1, fc2, fc3 = st.columns([2, 1, 1])
         with fc1:
-            search_kw = st.text_input("Search by Tag / Keyword / Value", placeholder="e.g. PatientID, 0010,0020, Siemens", key="diff_search")
+            search_kw = st.text_input(
+                "Search by Tag / Keyword / Value",
+                placeholder="e.g. PatientID, 0010,0020, Siemens",
+                key="diff_search"
+            )
         with fc2:
-            show_filter = st.selectbox("Show", ["All", "Different Only", "Only in A", "Only in B", "Identical Only"], key="diff_filter")
+            show_filter = st.selectbox(
+                "Show",
+                ["All", "Different Only", "Only in A", "Only in B", "Identical Only"],
+                key="diff_filter"
+            )
         with fc3:
             show_count = st.selectbox("Rows per page", [50, 100, 200, 500, 9999], key="diff_count")
 
@@ -1355,20 +1404,15 @@ else:
         filtered_show = filtered[:show_count]
         st.caption(f"Showing **{len(filtered_show)}** of **{len(filtered)}** filtered rows (total: {total})")
 
-        # ── Diff Table with Inline Edit ───────────────
+        # ── Diff Table ────────────────────────────────
         st.markdown("#### 📊 Comparison Table")
         st.markdown("""
         <div style="font-size:13px;opacity:0.7;margin-bottom:12px;">
-            ✏️ <b>Inline Edit:</b> Expand a row to edit the value directly and apply to File B.
-            Pixel Data (7FE0,0010) is protected and cannot be modified.
+            ✏️ <b>Inline Edit:</b> Expand a row below to edit the value and apply to File B.
+            Pixel Data (7FE0,0010) is protected.
         </div>
         """, unsafe_allow_html=True)
 
-        # session_state for pending edits
-        if "diff_edits" not in st.session_state:
-            st.session_state.diff_edits = {}
-
-        # Display table
         display_rows = []
         for r in filtered_show:
             diff_icon = {"match": "✅", "diff": "⚠️", "only_a": "🔵", "only_b": "🟣"}.get(r["Diff"], "")
@@ -1391,7 +1435,10 @@ else:
             height=min(60 + len(df_diff) * 35, 700)
         )
 
-        # ── Inline Edit Section ───────────────────────
+        # ── Inline Edit ───────────────────────────────
+        if "diff_edits" not in st.session_state:
+            st.session_state.diff_edits = {}
+
         diff_editable = [r for r in filtered_show if r["Diff"] in ("diff", "only_a", "only_b")]
 
         if diff_editable:
@@ -1403,7 +1450,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # Pending edits display
             if st.session_state.diff_edits:
                 st.markdown(f"""
                 <div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);
@@ -1417,7 +1463,6 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Edit rows
             for row in diff_editable:
                 tag_str  = row["Tag"]
                 keyword  = row["Keyword"]
@@ -1426,8 +1471,11 @@ else:
                 diff_t   = row["Diff"]
                 is_pixel = tag_str == "(7FE0,0010)"
 
-                diff_color = {"diff": "#ff8c00", "only_a": "#00d4ff", "only_b": "#a070ff"}.get(diff_t, "#888")
-                diff_label = {"diff": "⚠️ Different", "only_a": "🔵 Only in A", "only_b": "🟣 Only in B"}.get(diff_t, "")
+                diff_label = {
+                    "diff":   "⚠️ Different",
+                    "only_a": "🔵 Only in A",
+                    "only_b": "🟣 Only in B"
+                }.get(diff_t, "")
 
                 with st.expander(
                     f"{diff_label}  |  {tag_str}  {keyword}"
@@ -1459,9 +1507,11 @@ else:
                             </div>
                             """, unsafe_allow_html=True)
 
-                        # Current staged value
                         current_staged = st.session_state.diff_edits.get(tag_str, "")
-                        default_val    = current_staged if current_staged else (val_a if diff_t in ("diff","only_a") else val_b)
+                        default_val    = current_staged if current_staged else (
+                            val_a if diff_t in ("diff","only_a") else val_b
+                        )
+
                         if "[Binary" in str(default_val) or "[Sequence" in str(default_val):
                             st.info("ℹ️ Binary/Sequence tags cannot be edited as text.")
                         else:
@@ -1471,7 +1521,7 @@ else:
                                 key=f"edit_{tag_str}",
                                 help=f"VR: {row['VR']} · Std Name: {row['Std Name']}"
                             )
-                            bc1, bc2 = st.columns([1, 1])
+                            bc1, bc2 = st.columns(2)
                             with bc1:
                                 if st.button(f"✅ Stage this edit", key=f"stage_{tag_str}", use_container_width=True):
                                     st.session_state.diff_edits[tag_str] = new_val
@@ -1483,87 +1533,84 @@ else:
                                         del st.session_state.diff_edits[tag_str]
                                         st.rerun()
 
-            # ── Apply & Download ──────────────────────
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("#### 💾 Apply & Download Modified File B")
+        # ── Apply & Download ──────────────────────────
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 💾 Apply & Download Modified File B")
 
-            if st.session_state.diff_edits:
+        if st.session_state.diff_edits:
+            st.markdown(f"""
+            <div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);
+                border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+                <div style="font-weight:800;color:#00c864;margin-bottom:10px;">
+                    📋 Staged Edits ({len(st.session_state.diff_edits)} tag(s))
+                </div>
+            """, unsafe_allow_html=True)
+            for ts, nv in st.session_state.diff_edits.items():
                 st.markdown(f"""
-                <div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);
-                    border-radius:12px;padding:16px 20px;margin-bottom:16px;">
-                    <div style="font-weight:800;color:#00c864;margin-bottom:10px;">
-                        📋 Staged Edits ({len(st.session_state.diff_edits)} tag(s))
-                    </div>
+                <div style="font-size:13px;padding:4px 0;border-bottom:1px solid rgba(42,53,80,0.4);">
+                    <span style="font-family:monospace;color:#00d4ff;">{ts}</span>
+                    &nbsp;→&nbsp;
+                    <span style="color:#e8eaf0;">'{nv}'</span>
+                </div>
                 """, unsafe_allow_html=True)
-                for ts, nv in st.session_state.diff_edits.items():
-                    st.markdown(f"""
-                    <div style="font-size:13px;padding:4px 0;border-bottom:1px solid rgba(42,53,80,0.4);">
-                        <span style="font-family:monospace;color:#00d4ff;">{ts}</span>
-                        &nbsp;→&nbsp;
-                        <span style="color:#e8eaf0;">'{nv}'</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-                dl_col1, dl_col2, dl_col3 = st.columns([2, 1, 1])
-                with dl_col1:
-                    # Re-read file_b for modification
-                    file_b.seek(0)
-                    ds_b_fresh = pydicom.dcmread(io.BytesIO(file_b.read()), force=True)
-                    modified_bytes = save_modified_dicom(ds_b_fresh, st.session_state.diff_edits)
-                    out_name = file_b.name.replace(".dcm","") + "_modified.dcm"
-                    st.download_button(
-                        "⬇️ Download Modified File B (.dcm)",
-                        data=modified_bytes,
-                        file_name=out_name,
-                        mime="application/octet-stream",
-                        use_container_width=True,
-                        type="primary"
-                    )
-                with dl_col2:
-                    # Export change log
-                    log_rows = [{"Tag": ts, "New Value": nv} for ts, nv in st.session_state.diff_edits.items()]
-                    log_df   = pd.DataFrame(log_rows)
-                    st.download_button(
-                        "📋 Download Change Log (CSV)",
-                        data=log_df.to_csv(index=False).encode("utf-8"),
-                        file_name="diff_change_log.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                with dl_col3:
-                    if st.button("🗑️ Clear All Staged Edits", use_container_width=True):
-                        st.session_state.diff_edits = {}
-                        st.rerun()
-            else:
-                st.info("💡 Stage at least one edit above to enable download.")
+            dl_col1, dl_col2, dl_col3 = st.columns([2, 1, 1])
+            with dl_col1:
+                modified_bytes = save_modified_dicom(ds_b, st.session_state.diff_edits)
+                out_name       = sel_name_b.replace(".dcm","") + "_modified.dcm"
+                st.download_button(
+                    "⬇️ Download Modified File B (.dcm)",
+                    data=modified_bytes,
+                    file_name=out_name,
+                    mime="application/octet-stream",
+                    use_container_width=True,
+                    type="primary"
+                )
+            with dl_col2:
+                log_rows = [{"Tag": ts, "New Value": nv} for ts, nv in st.session_state.diff_edits.items()]
+                log_df   = pd.DataFrame(log_rows)
+                st.download_button(
+                    "📋 Change Log (CSV)",
+                    data=log_df.to_csv(index=False).encode("utf-8"),
+                    file_name="diff_change_log.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with dl_col3:
+                if st.button("🗑️ Clear All Staged", use_container_width=True):
+                    st.session_state.diff_edits = {}
+                    st.rerun()
+        else:
+            st.info("💡 Stage at least one edit above to enable download.")
 
         # ── Export Diff Report ────────────────────────
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("#### 📤 Export Diff Report")
+        st.markdown("#### 📤 Export Full Diff Report")
+
         exp_rows = []
         for r in diff_rows:
             exp_rows.append({
-                "Tag":      r["Tag"],
-                "Keyword":  r["Keyword"],
-                "VR":       r["VR"],
-                "Std Name": r["Std Name"],
-                "Value A":  r["Value A"],
-                "Value B":  r["Value B"],
+                "Tag":       r["Tag"],
+                "Keyword":   r["Keyword"],
+                "VR":        r["VR"],
+                "Std Name":  r["Std Name"],
+                "Value A":   r["Value A"],
+                "Value B":   r["Value B"],
                 "Diff Type": r["Diff"],
             })
         df_exp_diff = pd.DataFrame(exp_rows)
+
         ec1, ec2 = st.columns(2)
         with ec1:
             st.download_button(
                 "⬇️ Download Full Diff CSV",
                 data=df_exp_diff.to_csv(index=False).encode("utf-8"),
-                file_name=f"dicom_diff_{file_a.name}_vs_{file_b.name}.csv",
+                file_name=f"dicom_diff_{sel_name_a}_vs_{sel_name_b}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
         with ec2:
-            # Excel with color
             buf_xl = io.BytesIO()
             with pd.ExcelWriter(buf_xl, engine="openpyxl") as writer:
                 df_exp_diff.to_excel(writer, index=False, sheet_name="DICOM Diff")
@@ -1574,7 +1621,12 @@ else:
                     if cell.value == "Diff Type":
                         diff_col_idx = i
                         break
-                color_map = {"match": "CCFFDD", "diff": "FFE0CC", "only_a": "CCF0FF", "only_b": "E8CCFF"}
+                color_map = {
+                    "match":  "CCFFDD",
+                    "diff":   "FFE0CC",
+                    "only_a": "CCF0FF",
+                    "only_b": "E8CCFF"
+                }
                 for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
                     dt    = row[diff_col_idx].value if diff_col_idx is not None else "match"
                     color = color_map.get(dt, "FFFFFF")
@@ -1583,20 +1635,26 @@ else:
             st.download_button(
                 "⬇️ Download Full Diff Excel",
                 data=buf_xl.getvalue(),
-                file_name=f"dicom_diff_{file_a.name}_vs_{file_b.name}.xlsx",
+                file_name=f"dicom_diff_{sel_name_a}_vs_{sel_name_b}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
 
     elif file_a or file_b:
-        missing = "File B" if file_a else "File A"
-        st.info(f"📂 Please also upload **{missing}** to start comparison.")
+        if not (ds_a and ds_b):
+            missing = "File B" if (file_a and not ds_b) else "File A"
+            st.info(f"📂 Please also upload **{missing}** to start comparison.")
     else:
         st.markdown("""
         <div style="text-align:center;padding:60px 20px;opacity:0.5;">
             <div style="font-size:48px;margin-bottom:16px;">⚖️</div>
-            <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Upload Two DICOM Files to Compare</div>
-            <div style="font-size:14px;">File A (Reference) and File B (Target) — all tag differences will be highlighted</div>
+            <div style="font-size:18px;font-weight:700;margin-bottom:8px;">
+                Upload Two DICOM Files to Compare
+            </div>
+            <div style="font-size:14px;">
+                File A (Reference) and File B (Target) ·
+                Supports single .dcm or .zip archive
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1619,7 +1677,8 @@ with st.sidebar:
     st.divider()
     st.markdown('<div class="sidebar-section-title">🔧 Current Mode</div>', unsafe_allow_html=True)
     mode_display = "🔍 Validation Mode" if st.session_state.mode == "validate" else "⚖️ Compare Mode"
-    st.markdown(f'<div style="font-size:14px;font-weight:700;color:#00d4ff;">{mode_display}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:14px;font-weight:700;color:#00d4ff;">{mode_display}</div>',
+                unsafe_allow_html=True)
 
     st.divider()
     if st.session_state.mode == "validate":
@@ -1652,14 +1711,20 @@ with st.sidebar:
             🟣 <b>Only in B</b> — highlighted in purple<br>
             ✏️ <b>Inline edit</b> — stage & apply to B<br>
             💾 <b>Download</b> — modified .dcm + log CSV<br>
-            📊 <b>Export</b> — full diff CSV / Excel
+            📊 <b>Export</b> — full diff CSV / Excel<br>
+            📦 <b>ZIP support</b> — upload .zip for both A & B
         </div>
         """, unsafe_allow_html=True)
         st.divider()
         if "diff_edits" in st.session_state and st.session_state.diff_edits:
             st.markdown('<div class="sidebar-section-title">✏️ Staged Edits</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:20px;font-weight:900;color:#00c864;">{len(st.session_state.diff_edits)}</div>', unsafe_allow_html=True)
-            st.markdown('<div style="font-size:12px;color:#8892a4;">tag(s) pending</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="font-size:20px;font-weight:900;color:#00c864;">'
+                f'{len(st.session_state.diff_edits)}</div>',
+                unsafe_allow_html=True
+            )
+            st.markdown('<div style="font-size:12px;color:#8892a4;">tag(s) pending</div>',
+                        unsafe_allow_html=True)
 
     st.divider()
     st.markdown('<div class="sidebar-section-title">🏭 Supported Manufacturers</div>', unsafe_allow_html=True)
