@@ -16,7 +16,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
-    page_title="DICOM Tag Validator | SwiftMR",
+    page_title="DICOM Header Editor | SwiftMR",
     page_icon="🏥",
     layout="wide"
 )
@@ -134,9 +134,9 @@ st.markdown(f"""
     <div class="airs-logo-box">{logo_html}</div>
     <div class="airs-title">
         <h1>SwiftMR</h1>
-        <p>DICOM Tag Validator &nbsp;·&nbsp; Internal Tool</p>
+        <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
     </div>
-    <div class="airs-badge">v3.0</div>
+    <div class="airs-badge">v2.0</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1612,7 +1612,7 @@ with st.sidebar:
             background:linear-gradient(90deg,#00d4ff,#0066ff);
             -webkit-background-clip:text;-webkit-text-fill-color:transparent;">SwiftMR</div>
         <div style="font-size:11px;color:#8892a4;margin-top:2px;letter-spacing:1px;">
-            DICOM Tag Validator v3.0</div>
+            DICOM Tag Validator v2.0</div>
     </div>
     """, unsafe_allow_html=True)
 
