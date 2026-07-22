@@ -1612,7 +1612,7 @@ with st.sidebar:
             background:linear-gradient(90deg,#00d4ff,#0066ff);
             -webkit-background-clip:text;-webkit-text-fill-color:transparent;">SwiftMR</div>
         <div style="font-size:11px;color:#8892a4;margin-top:2px;letter-spacing:1px;">
-            DICOM Tag Validator v2.0</div>
+            DICOM Header Editor v2.0</div>
     </div>
     """, unsafe_allow_html=True)
 
