@@ -1,18 +1,22 @@
 import streamlit as st
 import pydicom
+import pydicom.sequence
+import pydicom.multival
+from pydicom.datadict import keyword_for_tag
+from pydicom._dicom_dict import DicomDictionary
 import pandas as pd
 import io
-import zipfile
 import re
-import warnings
 import base64
-from copy import deepcopy
+import zipfile
+import warnings
+import copy
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
-    page_title="DICOM Header Editor | SwiftMR",
+    page_title="DICOM Tag Validator | SwiftMR",
     page_icon="🏥",
     layout="wide"
 )
@@ -25,765 +29,1657 @@ def get_image_base64(path):
     except:
         return None
 
-logo_b64 = get_image_base64("logo.png")
-logo_html = (
-    f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;">'
-    if logo_b64 else "🏥"
-)
-sidebar_logo_html = (
-    f'<img src="data:image/png;base64,{logo_b64}" style="width:48px;height:48px;object-fit:contain;">'
-    if logo_b64 else "🏥"
-)
+logo_b64          = get_image_base64("SwiftMR Logo.png")
+logo_html         = (f'<img src="data:image/png;base64,{logo_b64}" style="width:44px;height:44px;object-fit:contain;">' if logo_b64 else "🏥")
+sidebar_logo_html = (f'<img src="data:image/png;base64,{logo_b64}" style="width:48px;height:48px;object-fit:contain;">' if logo_b64 else "🏥")
 
-# ── Custom CSS ───────────────────────────────────────
+# ── CSS ──────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ══ 다크모드 ══ */
 @media (prefers-color-scheme: dark) {
     .stApp { background-color: #0f1117 !important; }
-    .airs-header {
-        background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%) !important;
-        border-bottom: 2px solid #00d4ff !important;
-    }
+    .airs-header { background: linear-gradient(135deg,#1a1f2e 0%,#0d1117 100%) !important; border-bottom: 2px solid #00d4ff !important; }
     .airs-title p { color: #8892a4 !important; }
-    .airs-badge {
-        background: rgba(0,212,255,0.1) !important;
-        border: 1px solid rgba(0,212,255,0.3) !important;
-        color: #00d4ff !important;
-    }
-    .step-card {
-        background: linear-gradient(135deg, #1a1f2e, #141820) !important;
-        border: 1px solid #2a3040 !important;
-    }
-    .step-title { color: #e8eaf0 !important; }
-    .tag-code {
-        color: #00d4ff !important;
-        background: rgba(0,212,255,0.08) !important;
-    }
-    .tag-name { color: #c8d0dc !important; }
-    .tag-vr { color: #8892a4 !important; background: #1e2535 !important; }
-    .tag-row { border-bottom: 1px solid #1e2535 !important; }
-    .sidebar-section-title {
-        color: #00d4ff !important;
-        border-bottom: 1px solid #2a3040 !important;
-    }
-    .how-step-text { color: #c8d0dc !important; }
-    .note-item { color: #c8d0dc !important; }
-    .mode-label { color: #8892a4 !important; }
-    .mode-label::after { background: #2a3040 !important; }
-    .success-banner {
-        background: linear-gradient(135deg, rgba(0,200,100,0.15), rgba(0,150,80,0.1)) !important;
-        border: 1px solid rgba(0,200,100,0.3) !important;
-        color: #00c864 !important;
-    }
+    .airs-badge { background: rgba(0,212,255,0.1) !important; border: 1px solid rgba(0,212,255,0.3) !important; color: #00d4ff !important; }
+    .summary-card  { background: linear-gradient(135deg,#1a1f2e,#141820) !important; border: 1px solid #2a3040 !important; }
+    .section-card  { background: linear-gradient(135deg,#1a1f2e,#141820) !important; border: 1px solid #2a3040 !important; }
+    .metric-card   { background: #1a1f2e !important; border: 1px solid #2a3040 !important; }
+    .metric-value  { color: #e8eaf0 !important; }
+    .metric-label  { color: #8892a4 !important; }
+    .sidebar-section-title { color: #00d4ff !important; border-bottom: 1px solid #2a3040 !important; }
+    .manufacturer-badge { background: rgba(0,212,255,0.1) !important; border: 1px solid rgba(0,212,255,0.3) !important; color: #00d4ff !important; }
+    .file-problem-card { background: rgba(255,60,60,0.08) !important; border: 1px solid rgba(255,60,60,0.3) !important; }
+    .phi-notice { background: linear-gradient(135deg,rgba(0,180,100,0.10),rgba(0,120,80,0.08)) !important; border: 1.5px solid rgba(0,200,120,0.4) !important; border-left: 4px solid #00c878 !important; }
+    .cat1-header { background: linear-gradient(135deg,rgba(255,60,60,0.15),rgba(200,0,0,0.08)) !important; border: 1px solid rgba(255,60,60,0.3) !important; }
+    .cat2-header { background: linear-gradient(135deg,rgba(255,140,0,0.15),rgba(200,100,0,0.08)) !important; border: 1px solid rgba(255,140,0,0.3) !important; }
+    .cat3-header { background: linear-gradient(135deg,rgba(0,180,255,0.12),rgba(0,100,200,0.08)) !important; border: 1px solid rgba(0,180,255,0.3) !important; }
+    .no-mfr-box  { background: rgba(255,180,0,0.08) !important; border: 1px solid rgba(255,180,0,0.3) !important; }
+    .std-info-box { background: rgba(0,212,255,0.05) !important; border: 1px solid rgba(0,212,255,0.15) !important; }
+    .mode-btn-active { background: linear-gradient(135deg,rgba(0,212,255,0.2),rgba(0,102,255,0.15)) !important; border: 2px solid #00d4ff !important; }
+    .mode-btn { background: rgba(255,255,255,0.03) !important; border: 1px solid #2a3040 !important; }
+    .diff-match { background: rgba(0,200,100,0.08) !important; }
+    .diff-diff  { background: rgba(255,140,0,0.15) !important; border-left: 3px solid #ff8c00 !important; }
+    .diff-only-a { background: rgba(0,212,255,0.10) !important; border-left: 3px solid #00d4ff !important; }
+    .diff-only-b { background: rgba(140,80,255,0.10) !important; border-left: 3px solid #a070ff !important; }
 }
-
-/* ══ 라이트모드 ══ */
 @media (prefers-color-scheme: light) {
     .stApp { background-color: #f0f4f8 !important; }
-    .airs-header {
-        background: linear-gradient(135deg, #ffffff 0%, #e8f0fe 100%) !important;
-        border-bottom: 2px solid #0066ff !important;
-    }
+    .airs-header { background: linear-gradient(135deg,#ffffff 0%,#e8f0fe 100%) !important; border-bottom: 2px solid #0066ff !important; }
     .airs-title p { color: #5a6a7a !important; }
-    .airs-badge {
-        background: rgba(0,102,255,0.1) !important;
-        border: 1px solid rgba(0,102,255,0.3) !important;
-        color: #0066ff !important;
-    }
-    .step-card {
-        background: linear-gradient(135deg, #ffffff, #f5f8ff) !important;
-        border: 1px solid #d0d8e8 !important;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important;
-    }
-    .step-title { color: #1a2030 !important; }
-    .tag-code {
-        color: #0055cc !important;
-        background: rgba(0,102,255,0.08) !important;
-    }
-    .tag-name { color: #2a3a4a !important; }
-    .tag-vr { color: #5a6a7a !important; background: #e8eef8 !important; }
-    .tag-row { border-bottom: 1px solid #d8e0f0 !important; }
-    .sidebar-section-title {
-        color: #0066ff !important;
-        border-bottom: 1px solid #d0d8e8 !important;
-    }
-    .how-step-text { color: #3a4a5a !important; }
-    .note-item { color: #3a4a5a !important; }
-    .mode-label { color: #5a6a7a !important; }
-    .mode-label::after { background: #d0d8e8 !important; }
-    .success-banner {
-        background: linear-gradient(135deg, rgba(0,180,80,0.1), rgba(0,150,60,0.08)) !important;
-        border: 1px solid rgba(0,180,80,0.3) !important;
-        color: #007a40 !important;
-    }
+    .airs-badge { background: rgba(0,102,255,0.1) !important; border: 1px solid rgba(0,102,255,0.3) !important; color: #0066ff !important; }
+    .summary-card  { background: linear-gradient(135deg,#ffffff,#f5f8ff) !important; border: 1px solid #d0d8e8 !important; box-shadow: 0 4px 24px rgba(0,0,0,0.08) !important; }
+    .section-card  { background: linear-gradient(135deg,#ffffff,#f5f8ff) !important; border: 1px solid #d0d8e8 !important; box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important; }
+    .metric-card   { background: #ffffff !important; border: 1px solid #d0d8e8 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important; }
+    .metric-value  { color: #1a2030 !important; }
+    .metric-label  { color: #5a6a7a !important; }
+    .sidebar-section-title { color: #0066ff !important; border-bottom: 1px solid #d0d8e8 !important; }
+    .manufacturer-badge { background: rgba(0,102,255,0.1) !important; border: 1px solid rgba(0,102,255,0.3) !important; color: #0066ff !important; }
+    .file-problem-card { background: rgba(255,60,60,0.06) !important; border: 1px solid rgba(255,60,60,0.3) !important; }
+    .phi-notice { background: linear-gradient(135deg,rgba(0,180,100,0.08),rgba(0,120,80,0.05)) !important; border: 1.5px solid rgba(0,180,100,0.4) !important; border-left: 4px solid #00a86b !important; }
+    .cat1-header { background: linear-gradient(135deg,rgba(255,60,60,0.10),rgba(200,0,0,0.05)) !important; border: 1px solid rgba(255,60,60,0.3) !important; }
+    .cat2-header { background: linear-gradient(135deg,rgba(255,140,0,0.10),rgba(200,100,0,0.05)) !important; border: 1px solid rgba(255,140,0,0.3) !important; }
+    .cat3-header { background: linear-gradient(135deg,rgba(0,180,255,0.08),rgba(0,100,200,0.05)) !important; border: 1px solid rgba(0,180,255,0.3) !important; }
+    .no-mfr-box  { background: rgba(255,180,0,0.06) !important; border: 1px solid rgba(255,180,0,0.3) !important; }
+    .std-info-box { background: rgba(0,100,200,0.04) !important; border: 1px solid rgba(0,100,200,0.12) !important; }
+    .mode-btn-active { background: linear-gradient(135deg,rgba(0,102,255,0.15),rgba(0,60,200,0.10)) !important; border: 2px solid #0066ff !important; }
+    .mode-btn { background: rgba(0,0,0,0.02) !important; border: 1px solid #d0d8e8 !important; }
+    .diff-match { background: rgba(0,180,100,0.06) !important; }
+    .diff-diff  { background: rgba(255,140,0,0.12) !important; border-left: 3px solid #ff8c00 !important; }
+    .diff-only-a { background: rgba(0,100,200,0.08) !important; border-left: 3px solid #0066ff !important; }
+    .diff-only-b { background: rgba(140,80,255,0.08) !important; border-left: 3px solid #8844cc !important; }
 }
-
-/* ══ 공통 ══ */
-.airs-header {
-    display: flex; align-items: center; gap: 16px;
-    padding: 20px 28px;
-    margin-bottom: 32px;
-    border-radius: 0 0 16px 16px;
-}
-.airs-logo-box {
-    width: 52px; height: 52px;
-    background: transparent;
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-}
-.airs-title h1 {
-    margin: 0; font-size: 22px; font-weight: 800;
-    background: linear-gradient(90deg, #00d4ff, #0066ff);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    letter-spacing: 2px;
-}
-.airs-title p { margin: 2px 0 0; font-size: 13px; letter-spacing: 1px; }
-.airs-badge {
-    margin-left: auto;
-    padding: 6px 14px;
-    border-radius: 20px; font-size: 12px;
-    font-weight: 600; letter-spacing: 1px;
-}
-.step-card {
-    border-radius: 16px;
-    padding: 20px 24px; margin-bottom: 16px;
-}
-.step-header { display: flex; align-items: center; gap: 12px; }
-.step-number {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, #00d4ff, #0066ff);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 16px; color: white;
-    box-shadow: 0 2px 12px rgba(0,212,255,0.4); flex-shrink: 0;
-}
-.step-title { font-size: 18px; font-weight: 700; margin: 0; }
-.success-banner {
-    border-radius: 12px; padding: 14px 20px;
-    font-weight: 600;
-    display: flex; align-items: center; gap: 10px; margin: 12px 0;
-}
-.sidebar-section-title {
-    font-size: 12px; font-weight: 700;
-    letter-spacing: 1px; text-transform: uppercase;
-    margin-bottom: 10px; padding-bottom: 6px;
-}
-.how-step { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
-.how-step-num {
-    width: 20px; height: 20px; flex-shrink: 0;
-    background: linear-gradient(135deg, #00d4ff, #0066ff);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700; color: white;
-}
-.how-step-text { font-size: 13px; line-height: 1.5; }
-.mode-label {
-    font-size: 11px; font-weight: 700;
-    letter-spacing: 1px; text-transform: uppercase;
-    margin: 12px 0 6px; display: flex; align-items: center; gap: 6px;
-}
-.mode-label::after { content: ''; flex: 1; height: 1px; }
-.note-item {
-    display: flex; align-items: flex-start; gap: 8px;
-    margin-bottom: 8px; font-size: 13px;
-}
-.note-icon { font-size: 14px; flex-shrink: 0; }
-.tag-row {
-    display: flex; align-items: center; gap: 6px;
-    padding: 5px 0;
-}
-.tag-code {
-    font-family: monospace; font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px; min-width: 100px; flex-shrink: 0;
-}
-.tag-name { font-size: 12px; flex: 1; }
-.tag-vr {
-    font-size: 11px; padding: 1px 5px;
-    border-radius: 3px; font-family: monospace; flex-shrink: 0;
-}
+.airs-header { display:flex; align-items:center; gap:16px; padding:20px 28px; margin-bottom:24px; border-radius:0 0 16px 16px; }
+.airs-logo-box { width:52px; height:52px; background:transparent; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.airs-title h1 { margin:0; font-size:22px; font-weight:800; background:linear-gradient(90deg,#00d4ff,#0066ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; letter-spacing:2px; }
+.airs-title p  { margin:2px 0 0; font-size:13px; letter-spacing:1px; }
+.airs-badge    { margin-left:auto; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; letter-spacing:1px; }
+.summary-card  { border-radius:16px; padding:24px 28px; margin-bottom:20px; }
+.section-card  { border-radius:16px; padding:20px 24px; margin-bottom:16px; }
+.section-title { font-size:16px; font-weight:700; display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+.metric-card   { border-radius:12px; padding:16px 20px; text-align:center; }
+.metric-value  { font-size:28px; font-weight:800; line-height:1.1; }
+.metric-label  { font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+.overall-pass    { background:linear-gradient(135deg,rgba(0,200,100,0.15),rgba(0,150,80,0.1)) !important; border:2px solid rgba(0,200,100,0.4) !important; }
+.overall-fail    { background:linear-gradient(135deg,rgba(255,60,60,0.15),rgba(200,0,0,0.1)) !important; border:2px solid rgba(255,60,60,0.4) !important; }
+.overall-warning { background:linear-gradient(135deg,rgba(255,180,0,0.15),rgba(200,140,0,0.1)) !important; border:2px solid rgba(255,180,0,0.4) !important; }
+.overall-title { font-size:28px; font-weight:900; letter-spacing:2px; margin-bottom:4px; }
+.overall-sub   { font-size:14px; opacity:0.8; }
+.manufacturer-badge { display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:20px; font-size:13px; font-weight:700; margin:4px; }
+.sidebar-section-title { font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:10px; padding-bottom:6px; }
+.phi-notice        { border-radius:12px; padding:16px 20px; margin-bottom:20px; }
+.file-problem-card { border-radius:12px; padding:12px 16px; margin-bottom:8px; }
+.cat1-header { border-radius:12px; padding:14px 20px; margin-bottom:12px; }
+.cat2-header { border-radius:12px; padding:14px 20px; margin-bottom:12px; }
+.cat3-header { border-radius:12px; padding:14px 20px; margin-bottom:12px; }
+.no-mfr-box  { border-radius:12px; padding:16px 20px; margin-bottom:12px; }
+.std-info-box { border-radius:10px; padding:12px 16px; margin-bottom:12px; font-size:12px; }
+.mode-selector { display:flex; gap:12px; margin-bottom:24px; }
+.mode-btn { border-radius:14px; padding:18px 24px; cursor:pointer; transition:all .2s; flex:1; }
+.mode-btn-active { border-radius:14px; padding:18px 24px; cursor:pointer; flex:1; }
+.mode-btn-title { font-size:16px; font-weight:800; margin-bottom:4px; }
+.mode-btn-desc  { font-size:12px; opacity:0.7; }
+.diff-summary-box { border-radius:14px; padding:20px 24px; margin-bottom:20px; }
+.diff-match { border-radius:6px; padding:2px 4px; }
+.diff-diff  { border-radius:6px; padding:2px 4px; }
+.diff-only-a { border-radius:6px; padding:2px 4px; }
+.diff-only-b { border-radius:6px; padding:2px 4px; }
+.diff-legend { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.diff-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
+.diff-legend-dot { width:12px; height:12px; border-radius:3px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Header ───────────────────────────────────────────
 st.markdown(f"""
 <div class="airs-header">
     <div class="airs-logo-box">{logo_html}</div>
     <div class="airs-title">
         <h1>SwiftMR</h1>
-        <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
+        <p>DICOM Tag Validator &nbsp;·&nbsp; Internal Tool</p>
     </div>
-    <div class="airs-badge">v2.0</div>
+    <div class="airs-badge">v3.0</div>
 </div>
 """, unsafe_allow_html=True)
 
+# ════════════════════════════════════════════════════
+# DICOM Standard 기반 검증 엔진
+# ════════════════════════════════════════════════════
+VR_RULES = {
+    'DS': {'cast': float, 'max_len': 16,   'desc': 'Decimal String'},
+    'IS': {'cast': int,   'max_len': 12,   'range': (-2**31, 2**31-1), 'desc': 'Integer String'},
+    'US': {'cast': int,   'range': (0, 65535),      'desc': 'Unsigned Short'},
+    'SS': {'cast': int,   'range': (-32768, 32767),  'desc': 'Signed Short'},
+    'UL': {'cast': int,   'range': (0, 2**32-1),    'desc': 'Unsigned Long'},
+    'SL': {'cast': int,   'range': (-2**31, 2**31-1),'desc': 'Signed Long'},
+    'FL': {'cast': float, 'desc': 'Floating Point Single'},
+    'FD': {'cast': float, 'desc': 'Floating Point Double'},
+    'CS': {'cast': str,   'max_len': 16,   'desc': 'Code String'},
+    'LO': {'cast': str,   'max_len': 64,   'desc': 'Long String'},
+    'SH': {'cast': str,   'max_len': 16,   'desc': 'Short String'},
+    'ST': {'cast': str,   'max_len': 1024, 'desc': 'Short Text'},
+    'LT': {'cast': str,   'max_len': 10240,'desc': 'Long Text'},
+    'UT': {'cast': str,   'desc': 'Unlimited Text'},
+    'UI': {'cast': str,   'max_len': 64,   'pattern': r'^[0-9.]+$', 'desc': 'Unique Identifier'},
+    'DA': {'cast': str,   'pattern': r'^\d{8}$', 'desc': 'Date YYYYMMDD'},
+    'TM': {'cast': str,   'pattern': r'^\d{2}(\d{2}(\d{2}(\.\d+)?)?)?$', 'desc': 'Time'},
+    'PN': {'cast': str,   'max_len': 324,  'desc': 'Person Name'},
+    'AS': {'cast': str,   'pattern': r'^\d{3}[DWMY]$', 'desc': 'Age String'},
+}
 
-# ── Utility Functions ────────────────────────────────
-def parse_dicom(file_bytes):
-    return pydicom.dcmread(io.BytesIO(file_bytes), force=True)
+DICOM_ENUMS = {
+    (0x0008,0x0060): {'values': {'AR','AU','BDUS','BI','BMD','CR','CT','DG','DOC','DX','ECG','EPS','ES','FID','GM','HC','HD','IO','IOL','IVOCT','IVUS','KER','KO','LEN','LS','MG','MR','M3D','NM','OAM','OCT','OP','OPM','OPT','OPTBSV','OPTENF','OPV','OSS','OT','PLAN','PR','PT','PX','REG','RESP','RF','RG','RTDOSE','RTIMAGE','RTINTENT','RTPLAN','RTRAD','RTSTRUCT','RWV','SEG','SM','SMR','SR','SRF','STAIN','TEXTUREMAP','TG','US','VA','XA','XC'}, 'desc': 'Modality (PS3.3 C.7.3.1.1.1)'},
+    (0x0018,0x5100): {'values': {'HFP','HFS','HFDR','HFDL','FFP','FFS','FFDR','FFDL','LFP','LFS','RFP','RFS','AFDR','AFDL','PFDR','PFDL'}, 'desc': 'Patient Position (PS3.3 C.7.3.1.1.2)'},
+    (0x0008,0x0008): {'values': {'ORIGINAL','DERIVED'}, 'desc': 'Image Type Value1 (PS3.3 C.7.6.1.1.2)', 'check_index': 0},
+    (0x0018,0x0023): {'values': {'2D','3D'}, 'desc': 'MR Acquisition Type (PS3.3 C.8.3.1.1.1)'},
+    (0x0028,0x0004): {'values': {'MONOCHROME1','MONOCHROME2','PALETTE COLOR','RGB','YBR_FULL','YBR_FULL_422','YBR_PARTIAL_422','YBR_PARTIAL_420','YBR_ICT','YBR_RCT'}, 'desc': 'Photometric Interpretation (PS3.3 C.7.6.3.1.2)'},
+    (0x0028,0x0103): {'values': {0, 1}, 'desc': 'Pixel Representation (PS3.3 C.7.6.3.1.5)'},
+    (0x0018,0x1312): {'values': {'ROW','COL','OTHER'}, 'desc': 'In-Plane Phase Encoding Direction (PS3.3 C.8.3.1.1.1)'},
+    (0x0018,0x0020): {'values': {'SE','IR','GR','EPI','RM'}, 'desc': 'Scanning Sequence (PS3.3 C.8.3.1.1.4)'},
+    (0x0018,0x0021): {'values': {'SK','MTC','SS','TRSS','SP','MP','OSP','NONE'}, 'desc': 'Sequence Variant (PS3.3 C.8.3.1.1.5)'},
+}
 
+def _is_zero(v):
+    f = _to_float(v)
+    return f is not None and f == 0.0
 
-def extract_tags(ds):
+def _to_float(v):
+    try:
+        return float(str(v).strip())
+    except Exception:
+        return None
+
+def _to_values(val):
+    if isinstance(val, pydicom.multival.MultiValue):
+        return list(val)
+    if isinstance(val, (list, tuple)):
+        return list(val)
+    return [val]
+
+def parse_vm(vm_str):
+    vm_str = str(vm_str).strip()
+    if '-' in vm_str:
+        parts    = vm_str.split('-')
+        min_vm   = int(parts[0])
+        max_part = parts[1]
+        if max_part in ('n',):
+            return min_vm, None, 1
+        elif max_part.endswith('n'):
+            factor = int(max_part[:-1]) if max_part[:-1].isdigit() else 1
+            return min_vm, None, factor
+        else:
+            return min_vm, int(max_part), 1
+    else:
+        n = int(vm_str)
+        return n, n, 1
+
+def get_std_info(tag_tuple):
+    tag_int = (tag_tuple[0] << 16) | tag_tuple[1]
+    info    = DicomDictionary.get(tag_int)
+    if info:
+        return {'vr': info[0], 'vm': info[1], 'name': info[2], 'retired': info[3], 'keyword': info[4]}
+    return None
+
+SPECIAL_RULES = {
+    (0x0020,0x0032): {'ref': 'PS3.3 C.7.6.2.1.1', 'check': lambda vals: ((False, f"Expected 3 values (X\\Y\\Z), got {len(vals)}") if len(vals) != 3 else (False, "All zeros — likely unset placeholder") if all(_is_zero(v) for v in vals) else (True, ""))},
+    (0x0020,0x0037): {'ref': 'PS3.3 C.7.6.2.1.1', 'check': lambda vals: ((False, f"Expected 6 values, got {len(vals)}") if len(vals) != 6 else (False, "All zeros — likely unset placeholder") if all(_is_zero(v) for v in vals) else (True, ""))},
+    (0x0028,0x0030): {'ref': 'PS3.3 10.7.1.3',    'check': lambda vals: ((False, f"Expected 2 values, got {len(vals)}") if len(vals) != 2 else (False, f"PixelSpacing must be positive") if any(_to_float(v) is not None and _to_float(v) <= 0 for v in vals) else (True, ""))},
+    (0x0028,0x1051): {'ref': 'PS3.3 C.7.6.3.1.5', 'check': lambda vals: ((False, f"WindowWidth must be > 0, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+    (0x0028,0x0101): {'ref': 'PS3.5 8.2',          'check': lambda vals: ((False, f"BitsStored must be 1-16, got {vals[0]}") if vals and not (1 <= int(str(vals[0])) <= 16) else (True, ""))},
+    (0x0018,0x0050): {'ref': 'PS3.3 C.7.6.2.1.1', 'check': lambda vals: ((False, f"SliceThickness cannot be negative, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) < 0 else (True, ""))},
+    (0x0018,0x0088): {'ref': 'PS3.3 C.7.6.3.1.4', 'check': lambda vals: ((False, f"SpacingBetweenSlices must be positive, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+    (0x0028,0x0010): {'ref': 'PS3.3 C.7.6.3.1.4', 'check': lambda vals: ((False, f"Rows must be positive, got {vals[0]}") if vals and int(str(vals[0])) <= 0 else (True, ""))},
+    (0x0028,0x0011): {'ref': 'PS3.3 C.7.6.3.1.4', 'check': lambda vals: ((False, f"Columns must be positive, got {vals[0]}") if vals and int(str(vals[0])) <= 0 else (True, ""))},
+    (0x0018,0x0084): {'ref': 'PS3.3 C.8.3.1.1.1', 'check': lambda vals: ((False, f"ImagingFrequency must be positive, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+    (0x0018,0x0087): {'ref': 'PS3.3 C.8.3.1.1.1', 'check': lambda vals: ((False, f"MagneticFieldStrength must be positive, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+    (0x0018,0x0083): {'ref': 'PS3.3 C.8.3.1.1.1', 'check': lambda vals: ((False, f"NumberOfAverages must be positive, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+    (0x0018,0x0081): {'ref': 'PS3.3 C.8.3.1.1.1', 'check': lambda vals: ((False, f"EchoTime must be positive, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+    (0x0018,0x0080): {'ref': 'PS3.3 C.8.3.1.1.1', 'check': lambda vals: ((False, f"RepetitionTime must be positive, got {vals[0]}") if vals and _to_float(vals[0]) is not None and _to_float(vals[0]) <= 0 else (True, ""))},
+}
+
+def validate_value_full(tag_tuple, elem):
+    if elem is None:
+        return True, "", {}
+    std = get_std_info(tag_tuple)
+    try:
+        val = elem.value
+        if val is None:
+            return False, "Null value", std or {}
+        if isinstance(val, str) and val.strip() == "":
+            return False, "Empty string value", std or {}
+        if isinstance(val, pydicom.sequence.Sequence) and len(val) == 0:
+            return False, "Empty sequence", std or {}
+        if isinstance(val, (bytes, bytearray)):
+            return True, "", std or {}
+        if isinstance(val, pydicom.sequence.Sequence):
+            return True, "", std or {}
+        values  = _to_values(val)
+        std_vr  = std['vr'] if std else elem.VR
+        std_vm  = std['vm'] if std else '1-n'
+        if std_vm and std_vm not in ('', '1-n', '1'):
+            try:
+                min_vm, max_vm, factor = parse_vm(std_vm)
+                count = len(values)
+                if count < min_vm:
+                    return False, f"VM violation: expected min {min_vm} values (VM={std_vm}), got {count}", std or {}
+                if max_vm is not None and count > max_vm:
+                    return False, f"VM violation: expected max {max_vm} values (VM={std_vm}), got {count}", std or {}
+            except Exception:
+                pass
+        rule = VR_RULES.get(std_vr)
+        if rule:
+            for v in values:
+                s = str(v).strip()
+                try:
+                    converted = rule['cast'](s)
+                except (ValueError, TypeError):
+                    return False, f"VR={std_vr} ({rule['desc']}): cannot convert '{s}'", std or {}
+                if 'range' in rule:
+                    lo, hi = rule['range']
+                    if not (lo <= converted <= hi):
+                        return False, f"VR={std_vr}: value {converted} out of range [{lo}, {hi}]", std or {}
+                if 'pattern' in rule:
+                    if not re.match(rule['pattern'], s):
+                        return False, f"VR={std_vr} ({rule['desc']}): '{s}' does not match expected format", std or {}
+                if 'max_len' in rule:
+                    if len(s) > rule['max_len']:
+                        return False, f"VR={std_vr}: value length {len(s)} exceeds max {rule['max_len']}", std or {}
+        enum_spec = DICOM_ENUMS.get(tag_tuple)
+        if enum_spec:
+            check_idx = enum_spec.get('check_index', None)
+            if check_idx is not None:
+                if len(values) > check_idx:
+                    v_str = str(values[check_idx]).strip().upper()
+                    if v_str not in enum_spec['values']:
+                        return False, f"Enum violation [{enum_spec['desc']}]: value[{check_idx}]='{v_str}' not valid. Allowed: {sorted(enum_spec['values'])}", std or {}
+            else:
+                v_str = str(values[0]).strip().upper() if values else ""
+                if v_str not in enum_spec['values']:
+                    return False, f"Enum violation [{enum_spec['desc']}]: '{v_str}' not valid. Allowed: {sorted(enum_spec['values'])}", std or {}
+        special = SPECIAL_RULES.get(tag_tuple)
+        if special:
+            try:
+                ok, msg = special['check'](values)
+                if not ok:
+                    return False, f"{msg} ({special.get('ref','')})", std or {}
+            except Exception:
+                pass
+    except Exception as e:
+        return False, f"Validation error: {e}", std or {}
+    return True, "", std or {}
+
+# ════════════════════════════════════════════════════
+# Tag Definitions
+# ════════════════════════════════════════════════════
+CAT1_MANDATORY = [
+    {"name": "Instance Number",           "tag": (0x0020,0x0013), "vr": "IS",  "purpose": "",               "mandatory": True},
+    {"name": "Series Number",             "tag": (0x0020,0x0011), "vr": "IS",  "purpose": "Derived",        "mandatory": True},
+    {"name": "Image Type",                "tag": (0x0008,0x0008), "vr": "CS",  "purpose": "(3D)",           "mandatory": True},
+    {"name": "Series Description",        "tag": (0x0008,0x103E), "vr": "LO",  "purpose": "SWI",            "mandatory": True},
+    {"name": "Pixel Data",                "tag": (0x7FE0,0x0010), "vr": "OB",  "purpose": "",               "mandatory": True},
+    {"name": "Pixel Representation",      "tag": (0x0028,0x0103), "vr": "US",  "purpose": "",               "mandatory": True},
+    {"name": "Bits Stored",               "tag": (0x0028,0x0101), "vr": "US",  "purpose": "",               "mandatory": True},
+    {"name": "Rows",                      "tag": (0x0028,0x0010), "vr": "US",  "purpose": "",               "mandatory": True},
+    {"name": "Columns",                   "tag": (0x0028,0x0011), "vr": "US",  "purpose": "",               "mandatory": True},
+    {"name": "Pixel Spacing",             "tag": (0x0028,0x0030), "vr": "DS",  "purpose": "",               "mandatory": True},
+    {"name": "Window Center",             "tag": (0x0028,0x1050), "vr": "DS",  "purpose": "MIP",            "mandatory": True},
+    {"name": "Window Width",              "tag": (0x0028,0x1051), "vr": "DS",  "purpose": "MIP",            "mandatory": True},
+    {"name": "Image Orientation Patient", "tag": (0x0020,0x0037), "vr": "DS",  "purpose": "post",           "mandatory": True},
+    {"name": "Image Position Patient",    "tag": (0x0020,0x0032), "vr": "DS",  "purpose": "",               "mandatory": True},
+    {"name": "Spacing Between Slices",    "tag": (0x0018,0x0088), "vr": "DS",  "purpose": "post",           "mandatory": True},
+    {"name": "Slice Thickness",           "tag": (0x0018,0x0050), "vr": "DS",  "purpose": "post",           "mandatory": True},
+    {"name": "Overlay Bits Allocated",    "tag": (0x6000,0x0100), "vr": "US",  "purpose": "",               "mandatory": False},
+    {"name": "Overlay Bit Position",      "tag": (0x6000,0x0102), "vr": "US",  "purpose": "",               "mandatory": False},
+    {"name": "Overlay Data",              "tag": (0x6000,0x3000), "vr": "OB",  "purpose": "",               "mandatory": False},
+    {"name": "Overlay Rows",              "tag": (0x6000,0x0010), "vr": "US",  "purpose": "",               "mandatory": False},
+    {"name": "Overlay Columns",           "tag": (0x6000,0x0011), "vr": "US",  "purpose": "",               "mandatory": False},
+    {"name": "Diffusion b-value",         "tag": (0x0018,0x9087), "vr": "FD",  "purpose": "",               "mandatory": False},
+    {"name": "Slice Location",            "tag": (0x0020,0x1041), "vr": "DS",  "purpose": "Slice Interpol", "mandatory": False},
+]
+
+CAT2_TAGS = [
+    {"name": "Manufacturer",                         "tag": (0x0008,0x0070), "vr": "LO", "note": ""},
+    {"name": "Number of Averages",                   "tag": (0x0018,0x0083), "vr": "DS", "note": ""},
+    {"name": "Percent Sampling",                     "tag": (0x0018,0x0093), "vr": "DS", "note": ""},
+    {"name": "Acquisition Matrix",                   "tag": (0x0018,0x1310), "vr": "US", "note": ""},
+    {"name": "Derivation Description",               "tag": (0x0008,0x2111), "vr": "ST", "note": ""},
+    {"name": "In-Plane Phase Encoding Direction",    "tag": (0x0018,0x1312), "vr": "CS", "note": ""},
+    {"name": "Rows",                                 "tag": (0x0028,0x0010), "vr": "US", "note": ""},
+    {"name": "Columns",                              "tag": (0x0028,0x0011), "vr": "US", "note": ""},
+    {"name": "Percent Phase Field of View",          "tag": (0x0018,0x0094), "vr": "DS", "note": ""},
+    {"name": "Spacing Between Slices",               "tag": (0x0018,0x0088), "vr": "DS", "note": ""},
+    {"name": "Slice Thickness",                      "tag": (0x0018,0x0050), "vr": "DS", "note": ""},
+    {"name": "Image Orientation Patient",            "tag": (0x0020,0x0037), "vr": "DS", "note": ""},
+    {"name": "Image Position Patient",               "tag": (0x0020,0x0032), "vr": "DS", "note": ""},
+    {"name": "Request Attributes Sequence",          "tag": (0x0040,0x0275), "vr": "SQ", "note": "Fonar / Other"},
+    {"name": "Per-frame Functional Groups Sequence", "tag": (0x5200,0x9230), "vr": "SQ", "note": "Fonar / Other"},
+    {"name": "Derivation Code Sequence",             "tag": (0x0008,0x9215), "vr": "SQ", "note": "GE / Subtraction"},
+    {"name": "Field of View Dimensions",             "tag": (0x0018,0x1149), "vr": "IS", "note": "Paramed"},
+]
+
+CAT3_TAGS = [
+    {"name": "Volume Based Calculation Technique",      "tag": (0x2005,0x140F), "vr": "CS", "manufacturer": "Philips",         "note": ""},
+    {"name": "Philips Private Creator",                 "tag": (0x2005,0x0014), "vr": "LO", "manufacturer": "Philips",         "note": ""},
+    {"name": "Image Plane Number",                      "tag": (0x2001,0x100A), "vr": "IS", "manufacturer": "Philips",         "note": ""},
+    {"name": "MRSeriesNrOfSlices",                      "tag": (0x2001,0x1018), "vr": "SL", "manufacturer": "Philips",         "note": ""},
+    {"name": "Stack",                                   "tag": (0x2001,0x105F), "vr": "SQ", "manufacturer": "Philips",         "note": ""},
+    {"name": "MRImageOffCentreAP",                      "tag": (0x2005,0x1008), "vr": "FL", "manufacturer": "Philips",         "note": ""},
+    {"name": "MRImageOffCentreFH",                      "tag": (0x2005,0x1009), "vr": "FL", "manufacturer": "Philips",         "note": ""},
+    {"name": "MRImageOffCentreRL",                      "tag": (0x2005,0x100A), "vr": "FL", "manufacturer": "Philips",         "note": ""},
+    {"name": "SeriesDerivationDescription",             "tag": (0x2001,0x10CC), "vr": "ST", "manufacturer": "Philips",         "note": ""},
+    {"name": "Siemens Private Creator",                 "tag": (0x0051,0x0010), "vr": "LO", "manufacturer": "Siemens",         "note": ""},
+    {"name": "pat factor",                              "tag": (0x0051,0x1011), "vr": "LO", "manufacturer": "Siemens",         "note": ""},
+    {"name": "acquisition matrix",                     "tag": (0x0051,0x100B), "vr": "LO", "manufacturer": "Siemens",         "note": ""},
+    {"name": "diffusion b-value",                      "tag": (0x0019,0x100C), "vr": "IS", "manufacturer": "Siemens",         "note": ""},
+    {"name": "GE Private Creator",                      "tag": (0x0043,0x0010), "vr": "LO", "manufacturer": "GE",              "note": ""},
+    {"name": "pat type",                                "tag": (0x0043,0x1084), "vr": "LO", "manufacturer": "GE",              "note": ""},
+    {"name": "pat factor",                              "tag": (0x0043,0x1083), "vr": "DS", "manufacturer": "GE",              "note": ""},
+    {"name": "TOSHIBA_MEC",                             "tag": (0x0029,0x1001), "vr": "SQ", "manufacturer": "Canon (Toshiba)", "note": ""},
+    {"name": "TOSHIBA_MEC",                             "tag": (0x700D,0x0010), "vr": "LO", "manufacturer": "Canon (Toshiba)", "note": ""},
+    {"name": "V1",                                      "tag": (0x0011,0x1001), "vr": "OB", "manufacturer": "Esaote",          "note": ""},
+    {"name": "MMCPrivate",                              "tag": (0x0029,0x102F), "vr": "",   "manufacturer": "Fonar",           "note": ""},
+    {"name": "Hyperfine Private Creator",               "tag": (0x351B,0x0010), "vr": "LO", "manufacturer": "Hyperfine",       "note": ""},
+    {"name": "acquisition voxel size",                  "tag": (0x0011,0x1017), "vr": "LO", "manufacturer": "Paramed",         "note": ""},
+]
+
+MANUFACTURER_KEYWORDS = {
+    "Philips":         ["philips"],
+    "Siemens":         ["siemens"],
+    "GE":              ["ge medical", "ge healthcare", "general electric"],
+    "Canon (Toshiba)": ["canon", "toshiba"],
+    "Esaote":          ["esaote"],
+    "Fonar":           ["fonar"],
+    "Hyperfine":       ["hyperfine"],
+    "Paramed":         ["paramed"],
+}
+
+# ════════════════════════════════════════════════════
+# Core Helpers
+# ════════════════════════════════════════════════════
+def get_tag_elem(ds, tag_tuple):
+    try:
+        tag = pydicom.tag.Tag(tag_tuple[0], tag_tuple[1])
+        return ds[tag] if tag in ds else None
+    except Exception:
+        return None
+
+def elem_to_display(elem):
+    if elem is None:
+        return None
+    try:
+        val = elem.value
+        if val is None:
+            return None
+        if isinstance(val, (bytes, bytearray)):
+            return f"[Binary {len(val)} bytes]"
+        if isinstance(val, pydicom.sequence.Sequence):
+            return f"[Sequence {len(val)} item(s)]"
+        if isinstance(val, pydicom.multival.MultiValue):
+            joined = ", ".join(str(v) for v in val)
+            return joined[:120] + "..." if len(joined) > 120 else joined
+        s = str(val)
+        return s[:120] + "..." if len(s) > 120 else s
+    except Exception:
+        return None
+
+def tag_to_str(tag_tuple):
+    return f"({tag_tuple[0]:04X},{tag_tuple[1]:04X})"
+
+def detect_manufacturer(ds):
+    try:
+        tag = pydicom.tag.Tag(0x0008, 0x0070)
+        if tag in ds:
+            raw = str(ds[tag].value).strip()
+            if not raw:
+                return None, "Unknown"
+            mfr = raw.lower()
+            for name, keywords in MANUFACTURER_KEYWORDS.items():
+                if any(k in mfr for k in keywords):
+                    return name, raw
+            return None, raw
+    except Exception:
+        pass
+    return None, "Unknown"
+
+def is_valid_dicom(data: bytes) -> bool:
+    try:
+        if len(data) < 132:
+            return False
+        if data[128:132] == b'DICM':
+            return True
+        ds = pydicom.dcmread(io.BytesIO(data), force=True, stop_before_pixels=True)
+        return len(ds) > 0
+    except Exception:
+        return False
+
+def load_files_from_upload(uploaded_file):
+    file_dict = {}
+    name = uploaded_file.name.lower()
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(uploaded_file.read())) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                zname    = info.filename
+                basename = Path(zname).name
+                if basename.startswith("__") or basename.startswith(".") or basename == "":
+                    continue
+                zl = zname.lower()
+                if zl.endswith(".dcm") or zl.endswith(".dicom"):
+                    file_dict[basename] = zf.read(zname)
+                elif "." not in basename:
+                    try:
+                        data = zf.read(zname)
+                        if is_valid_dicom(data):
+                            file_dict[basename] = data
+                    except Exception:
+                        pass
+    else:
+        file_dict[uploaded_file.name] = uploaded_file.read()
+    return file_dict
+
+# ════════════════════════════════════════════════════
+# Validation (Mode 1)
+# ════════════════════════════════════════════════════
+def make_row(name, tag_tuple, vr_hint, extra_key, extra_val, elem, mandatory=None):
+    display_val = elem_to_display(elem)
+    present     = display_val is not None
+    std         = get_std_info(tag_tuple)
+    if present:
+        is_valid, issue, _ = validate_value_full(tag_tuple, elem)
+    else:
+        is_valid, issue = True, ""
+    if not present:
+        status = "❌  Missing" if mandatory else "⚠️  Missing"
+    elif not is_valid:
+        status = "⚠️  Invalid"
+    else:
+        status = "✅  Present"
+    is_problem = (mandatory is True) and (not present or not is_valid)
+    return {
+        "Name": name, "Tag": tag_to_str(tag_tuple),
+        "Std VR": std['vr'] if std else vr_hint,
+        "Std VM": std['vm'] if std else "—",
+        "Std Name": std['name'] if std else "—",
+        extra_key: extra_val,
+        "Value": display_val if present else "MISSING",
+        "Issue": issue, "Status": status,
+        "_present": present, "_valid": is_valid,
+        "_issue": issue, "_mandatory": mandatory, "_is_problem": is_problem,
+    }
+
+def validate_cat1(ds):
+    results = []
+    for t in CAT1_MANDATORY:
+        elem = get_tag_elem(ds, t["tag"])
+        row  = make_row(t["name"], t["tag"], t["vr"], "Purpose", t["purpose"], elem, mandatory=t["mandatory"])
+        row["Type"] = "🔴 Mandatory" if t["mandatory"] else "🟡 Optional"
+        results.append(row)
+    return results
+
+def validate_cat2(ds):
+    results = []
+    for t in CAT2_TAGS:
+        elem = get_tag_elem(ds, t["tag"])
+        row  = make_row(t["name"], t["tag"], t["vr"], "Note", t["note"], elem, mandatory=False)
+        results.append(row)
+    return results
+
+def validate_cat3(ds, mfr_name):
+    if not mfr_name:
+        return []
+    results = []
+    for t in CAT3_TAGS:
+        if t["manufacturer"] != mfr_name:
+            continue
+        elem = get_tag_elem(ds, t["tag"])
+        row  = make_row(t["name"], t["tag"], t["vr"], "Note", t["note"], elem, mandatory=False)
+        row["Manufacturer"] = t["manufacturer"]
+        results.append(row)
+    return results
+
+def validate_single_file(fname, file_bytes):
+    try:
+        ds = pydicom.dcmread(io.BytesIO(file_bytes), force=True)
+    except Exception as e:
+        return {"filename": fname, "error": str(e)}
+    mfr_name, mfr_raw = detect_manufacturer(ds)
+    cat1 = validate_cat1(ds)
+    cat2 = validate_cat2(ds)
+    cat3 = validate_cat3(ds, mfr_name)
+    def counts(rows, mandatory_only=False):
+        if mandatory_only:
+            rows = [r for r in rows if r.get("_mandatory")]
+        total   = len(rows)
+        valid   = sum(1 for r in rows if r["_present"] and r["_valid"])
+        invalid = sum(1 for r in rows if r["_present"] and not r["_valid"])
+        missing = sum(1 for r in rows if not r["_present"])
+        return total, valid, invalid, missing
+    c1m_total, c1m_valid, c1m_invalid, c1m_missing = counts(cat1, mandatory_only=True)
+    c1o_total, c1o_valid, _,            _           = counts([r for r in cat1 if not r.get("_mandatory")])
+    c2_total,  c2_valid,  c2_invalid,   c2_missing  = counts(cat2)
+    c3_total,  c3_valid,  c3_invalid,   c3_missing  = counts(cat3)
+    cat1_problems = c1m_invalid + c1m_missing
+    return {
+        "filename": fname, "error": None,
+        "status": "PASS" if cat1_problems == 0 else "FAIL",
+        "mfr_name": mfr_name, "mfr_raw": mfr_raw, "ds": ds,
+        "cat1": cat1, "cat2": cat2, "cat3": cat3,
+        "c1m_total": c1m_total, "c1m_valid": c1m_valid,
+        "c1m_invalid": c1m_invalid, "c1m_missing": c1m_missing,
+        "c1m_problems": cat1_problems,
+        "c1o_total": c1o_total, "c1o_valid": c1o_valid,
+        "c2_total": c2_total, "c2_valid": c2_valid,
+        "c2_invalid": c2_invalid, "c2_missing": c2_missing,
+        "c3_total": c3_total, "c3_valid": c3_valid,
+        "c3_invalid": c3_invalid, "c3_missing": c3_missing,
+    }
+
+# ════════════════════════════════════════════════════
+# DIFF Engine (Mode 2)
+# ════════════════════════════════════════════════════
+def get_all_tags_flat(ds):
+    """ds의 모든 태그를 {tag_str: display_value} dict로 반환"""
+    result = {}
+    for elem in ds:
+        try:
+            tag_tuple = (elem.tag.group, elem.tag.element)
+            tag_str   = tag_to_str(tag_tuple)
+            val       = elem_to_display(elem)
+            if val is None:
+                val = ""
+            result[tag_str] = {
+                "value":   val,
+                "keyword": elem.keyword or keyword_for_tag(elem.tag) or "—",
+                "vr":      elem.VR,
+                "tag_tuple": tag_tuple,
+                "elem":    elem,
+            }
+        except Exception:
+            pass
+    return result
+
+def compare_dicom(ds_a, ds_b):
+    """
+    두 DICOM 비교
+    반환: list of dict
+    diff_type: 'match' | 'diff' | 'only_a' | 'only_b'
+    """
+    tags_a = get_all_tags_flat(ds_a)
+    tags_b = get_all_tags_flat(ds_b)
+    all_tags = sorted(set(list(tags_a.keys()) + list(tags_b.keys())))
+    rows = []
+    for tag_str in all_tags:
+        in_a = tag_str in tags_a
+        in_b = tag_str in tags_b
+        info_a = tags_a.get(tag_str, {})
+        info_b = tags_b.get(tag_str, {})
+        keyword = info_a.get("keyword") or info_b.get("keyword") or "—"
+        vr      = info_a.get("vr") or info_b.get("vr") or "—"
+        val_a   = info_a.get("value", "")
+        val_b   = info_b.get("value", "")
+        tag_tuple = info_a.get("tag_tuple") or info_b.get("tag_tuple")
+        std = get_std_info(tag_tuple) if tag_tuple else None
+        if in_a and in_b:
+            diff_type = "match" if val_a == val_b else "diff"
+        elif in_a:
+            diff_type = "only_a"
+        else:
+            diff_type = "only_b"
+        rows.append({
+            "Tag":      tag_str,
+            "Keyword":  keyword,
+            "VR":       vr,
+            "Std Name": std['name'] if std else "—",
+            "Value A":  val_a if in_a else "— NOT PRESENT —",
+            "Value B":  val_b if in_b else "— NOT PRESENT —",
+            "Diff":     diff_type,
+            "_tag_tuple": tag_tuple,
+            "_in_a":    in_a,
+            "_in_b":    in_b,
+        })
+    return rows
+
+def diff_summary(rows):
+    total   = len(rows)
+    match   = sum(1 for r in rows if r["Diff"] == "match")
+    diff    = sum(1 for r in rows if r["Diff"] == "diff")
+    only_a  = sum(1 for r in rows if r["Diff"] == "only_a")
+    only_b  = sum(1 for r in rows if r["Diff"] == "only_b")
+    return total, match, diff, only_a, only_b
+
+# ════════════════════════════════════════════════════
+# Display Helpers
+# ════════════════════════════════════════════════════
+def to_display_df(rows, cols):
+    df = pd.DataFrame(rows)
+    return df[[c for c in cols if c in df.columns]]
+
+def style_df(df):
+    def row_style(row):
+        s = str(row.get("Status", ""))
+        if "❌" in s:
+            return ["background-color: rgba(255,60,60,0.18)"] * len(row)
+        elif "Invalid" in s:
+            return ["background-color: rgba(255,120,0,0.18)"] * len(row)
+        elif "⚠️" in s:
+            return ["background-color: rgba(255,180,0,0.12)"] * len(row)
+        else:
+            return ["background-color: rgba(0,200,100,0.08)"] * len(row)
+    return df.style.apply(row_style, axis=1)
+
+def style_diff_df(df):
+    def row_style(row):
+        d = str(row.get("Diff", ""))
+        if d == "diff":
+            return ["background-color: rgba(255,140,0,0.20)"] * len(row)
+        elif d == "only_a":
+            return ["background-color: rgba(0,212,255,0.12)"] * len(row)
+        elif d == "only_b":
+            return ["background-color: rgba(140,80,255,0.12)"] * len(row)
+        else:
+            return ["background-color: rgba(0,200,100,0.06)"] * len(row)
+    return df.style.apply(row_style, axis=1)
+
+def get_all_tags_debug(ds):
     rows = []
     for elem in ds:
         try:
-            tag_str = f"({elem.tag.group:04X},{elem.tag.element:04X})"
-            value = (
-                str(elem.value)
-                if not isinstance(elem.value, bytes)
-                else f"[Binary {len(elem.value)} bytes]"
-            )
+            tag_tuple = (elem.tag.group, elem.tag.element)
+            std       = get_std_info(tag_tuple)
+            tag_str   = f"({elem.tag.group:04X},{elem.tag.element:04X})"
+            if isinstance(elem.value, (bytes, bytearray)):
+                val = f"[Binary {len(elem.value)} bytes]"
+            elif isinstance(elem.value, pydicom.sequence.Sequence):
+                val = f"[Sequence {len(elem.value)} item(s)]"
+            elif hasattr(elem.value, '__iter__') and not isinstance(elem.value, str):
+                val = ", ".join(str(v) for v in elem.value)[:100]
+            else:
+                val = str(elem.value)[:100]
             rows.append({
-                "Tag": tag_str,
-                "Keyword": elem.keyword if not elem.tag.is_private else "Private Tag",
-                "VR": str(elem.VR),
-                "Value": value,
-                "Private": elem.tag.is_private
+                "Tag": tag_str, "Keyword": elem.keyword or "—",
+                "Std VR": std['vr'] if std else elem.VR,
+                "Std VM": std['vm'] if std else "—",
+                "Std Name": std['name'] if std else "—",
+                "Value": val,
             })
         except Exception:
-            continue
-    return rows
+            pass
+    return pd.DataFrame(rows)
 
+def build_export_df(result):
+    rows = []
+    def status_str(r, cat):
+        if r["_present"] and r["_valid"]:     return "Present"
+        if r["_present"] and not r["_valid"]: return "INVALID"
+        return "MISSING" if (cat == 1 and r.get("_mandatory")) else "Missing"
+    for r in result["cat1"]:
+        rows.append({"File": result["filename"], "Category": "1. Mandatory-Public",
+            "Type": "Mandatory" if r.get("_mandatory") else "Optional",
+            "Manufacturer": "—", "Name": r["Name"], "Tag": r["Tag"],
+            "Std VR": r.get("Std VR",""), "Std VM": r.get("Std VM",""),
+            "Purpose/Note": r.get("Purpose",""),
+            "Status": status_str(r, 1), "Value": r["Value"], "Issue": r["_issue"]})
+    for r in result["cat2"]:
+        rows.append({"File": result["filename"], "Category": "2. Required-Public",
+            "Type": "Required", "Manufacturer": "—",
+            "Name": r["Name"], "Tag": r["Tag"],
+            "Std VR": r.get("Std VR",""), "Std VM": r.get("Std VM",""),
+            "Purpose/Note": r.get("Note",""),
+            "Status": status_str(r, 2), "Value": r["Value"], "Issue": r["_issue"]})
+    for r in result["cat3"]:
+        rows.append({"File": result["filename"], "Category": "3. Required-Private-MRI",
+            "Type": "Required", "Manufacturer": r.get("Manufacturer",""),
+            "Name": r["Name"], "Tag": r["Tag"],
+            "Std VR": r.get("Std VR",""), "Std VM": r.get("Std VM",""),
+            "Purpose/Note": r.get("Note",""),
+            "Status": status_str(r, 3), "Value": r["Value"], "Issue": r["_issue"]})
+    return pd.DataFrame(rows)
 
-def apply_modifications_to_ds(ds, modifications):
-    ds_copy = deepcopy(ds)
-    results = []
-    for tag_str, new_value in modifications.items():
+def excel_export(df, summary_df=None):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Tag Report")
+        ws = writer.sheets["Tag Report"]
+        from openpyxl.styles import PatternFill
+        status_col = None
+        for i, cell in enumerate(ws[1]):
+            if cell.value == "Status":
+                status_col = i
+                break
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            status = row[status_col].value if status_col is not None else ""
+            color  = ("FFCCCC" if status == "MISSING" else "FFE0CC" if status == "INVALID"
+                      else "FFF3CC" if status == "Missing" else "CCFFDD")
+            for cell in row:
+                cell.fill = PatternFill("solid", fgColor=color)
+        if summary_df is not None:
+            summary_df.to_excel(writer, index=False, sheet_name="Summary")
+            ws2 = writer.sheets["Summary"]
+            for row in ws2.iter_rows(min_row=2, max_row=ws2.max_row):
+                status = row[1].value if len(row) > 1 else ""
+                color  = "FFCCCC" if status == "FAIL" else "CCFFDD" if status == "PASS" else "FFE5CC"
+                for cell in row:
+                    cell.fill = PatternFill("solid", fgColor=color)
+    return buf.getvalue()
+
+def save_modified_dicom(ds, changes: dict) -> bytes:
+    """changes: {tag_str: new_value_str} 적용 후 bytes 반환"""
+    ds_copy = copy.deepcopy(ds)
+    for tag_str, new_val in changes.items():
         try:
-            group, element = tag_str.strip("()").split(",")
-            tag = pydicom.tag.Tag(int(group, 16), int(element, 16))
+            g = int(tag_str[1:5], 16)
+            e = int(tag_str[6:10], 16)
+            tag = pydicom.tag.Tag(g, e)
             if tag in ds_copy:
-                vr = ds_copy[tag].VR
-                old_value = str(ds_copy[tag].value)
-                if vr in ["DS", "FL", "FD"]:
-                    ds_copy[tag].value = float(new_value)
-                elif vr in ["IS", "SL", "SS", "UL", "US"]:
-                    ds_copy[tag].value = int(new_value)
+                elem = ds_copy[tag]
+                vr   = elem.VR
+                # Pixel Data 보호
+                if tag == pydicom.tag.Tag(0x7FE0, 0x0010):
+                    continue
+                if vr in ('DS', 'FL', 'FD'):
+                    if '\\' in new_val or ',' in new_val:
+                        parts = [p.strip() for p in new_val.replace('\\', ',').split(',')]
+                        elem.value = pydicom.multival.MultiValue(float, [float(p) for p in parts])
+                    else:
+                        elem.value = pydicom.valuerep.DS(new_val.strip())
+                elif vr in ('IS', 'US', 'SS', 'UL', 'SL'):
+                    elem.value = int(new_val.strip())
                 else:
-                    ds_copy[tag].value = new_value
-                results.append({
-                    "Tag": tag_str,
-                    "Keyword": ds_copy[tag].keyword,
-                    "Before": old_value,
-                    "After": new_value,
-                    "Status": "✅ Success"
-                })
-            else:
-                results.append({
-                    "Tag": tag_str, "Keyword": "-",
-                    "Before": "-", "After": new_value,
-                    "Status": "⚠️ Not found"
-                })
-        except Exception as e:
-            results.append({
-                "Tag": tag_str, "Keyword": "-",
-                "Before": "-", "After": new_value,
-                "Status": f"❌ Error: {e}"
-            })
-    output = io.BytesIO()
-    ds_copy.save_as(output, write_like_original=True)
-    return output.getvalue(), results
-
-
-def process_zip(zip_bytes, modifications):
-    input_zip = zipfile.ZipFile(io.BytesIO(zip_bytes))
-    output_buf = io.BytesIO()
-    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
-    all_results = []
-    success_count = 0
-    skip_count = 0
-    error_count = 0
-    file_list = [f for f in input_zip.namelist() if not f.endswith("/")]
-    skip_exts = {".jpg", ".jpeg", ".png", ".gif", ".bmp",
-                 ".txt", ".xml", ".json", ".pdf", ".zip"}
-
-    for filename in file_list:
-        file_bytes = input_zip.read(filename)
-        ext = Path(filename).suffix.lower()
-        if ext in skip_exts:
-            output_zip.writestr(filename, file_bytes)
-            skip_count += 1
-            continue
-        try:
-            ds = pydicom.dcmread(io.BytesIO(file_bytes), force=True)
-            if len(ds) < 3:
-                output_zip.writestr(filename, file_bytes)
-                skip_count += 1
-                continue
-            modified_bytes, results = apply_modifications_to_ds(ds, modifications)
-            for r in results:
-                r["File"] = filename
-            all_results.extend(results)
-            output_zip.writestr(filename, modified_bytes)
-            success_count += 1
-        except Exception as e:
-            error_count += 1
-            all_results.append({
-                "File": filename, "Tag": "-", "Keyword": "-",
-                "Before": "-", "After": "-",
-                "Status": f"❌ Failed: {e}"
-            })
-            output_zip.writestr(filename, file_bytes)
-
-    output_zip.close()
-    return output_buf.getvalue(), all_results, {
-        "total": len(file_list),
-        "success": success_count,
-        "skipped": skip_count,
-        "errors": error_count
-    }
-
-
-# ── Session State ────────────────────────────────────
-defaults = {
-    "ds": None,
-    "tags_df": None,
-    "modifications": {},
-    "filename": "",
-    "modified_bytes": None,
-    "mod_results": None,
-    "upload_mode": None,
-    "zip_bytes": None,
-    "summary": None,
-    "queue_msg": None,
-}
-for k, v in defaults.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+                    elem.value = new_val.strip()
+        except Exception:
+            pass
+    buf = io.BytesIO()
+    pydicom.dcmwrite(buf, ds_copy)
+    return buf.getvalue()
 
 # ════════════════════════════════════════════════════
-# PHI WARNING
+# UI — Header
 # ════════════════════════════════════════════════════
 st.markdown("""
-<div style="
-    background: linear-gradient(135deg, rgba(255,80,80,0.12), rgba(200,0,0,0.08));
-    border: 1.5px solid rgba(255,80,80,0.5);
-    border-left: 4px solid #ff4444;
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 8px;
-">
-    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-        <span style="font-size:20px;">🔒</span>
-        <span style="font-size:15px; font-weight:800; color:#ff4444; letter-spacing:1px;">
-            HIPAA & GDPR WARNING
-        </span>
+<div class="phi-notice">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:20px;">🔐</span>
+        <span style="font-size:15px;font-weight:800;letter-spacing:1px;">Privacy & Data Handling Notice</span>
     </div>
-    <div style="font-size:13px; color:#e8eaf0; line-height:1.8;">
-        ⚠️ This tool runs on <b>Streamlit Cloud (external server)</b>.<br>
-        ⚠️ <b>DO NOT upload files containing PHI (Protected Health Information)</b>.<br>
-        ⚠️ Uploading real patient data may violate <b>HIPAA</b> and <b>GDPR</b> regulations.<br>
-        ✅ Only use <b>fully anonymized or de-identified DICOM files</b>.
+    <div style="font-size:13px;line-height:2.0;">
+        📋 This tool is intended for <b>internal QA and compatibility validation</b> purposes only.<br>
+        💻 Files are processed <b>in-memory within your active session</b> — no data is explicitly saved or written to disk by this application.<br>
+        🌐 Uploaded data is transmitted to and temporarily held on <b>Streamlit Cloud servers</b> (operated by Snowflake Inc.) during your session.<br>
+        🔒 <b>For files containing real PHI, use only on a self-hosted / on-premise deployment</b> of this tool.<br>
+        ✅ Always use <b>de-identified or anonymized DICOM files</b> when using this cloud-hosted version.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-phi_confirmed = st.checkbox(
-    "✅ I confirm that this file does NOT contain any PHI (Protected Health Information) "
-    "and is fully anonymized.",
-    key="phi_confirm"
-)
+# ════════════════════════════════════════════════════
+# Mode Selector
+# ════════════════════════════════════════════════════
+if "mode" not in st.session_state:
+    st.session_state.mode = "validate"
 
-if not phi_confirmed:
-    st.warning("⛔ Please confirm the above statement before uploading any files.")
-    st.stop()
+st.markdown("### 🔧 Select Mode")
+col_m1, col_m2 = st.columns(2)
+with col_m1:
+    active1 = st.session_state.mode == "validate"
+    if st.button(
+        "🔍  Validation Mode\nSingle / Batch DICOM tag validation",
+        use_container_width=True,
+        type="primary" if active1 else "secondary",
+        key="btn_validate"
+    ):
+        st.session_state.mode = "validate"
+        st.rerun()
+with col_m2:
+    active2 = st.session_state.mode == "compare"
+    if st.button(
+        "⚖️  Compare Mode\nSide-by-side DICOM diff & inline edit",
+        use_container_width=True,
+        type="primary" if active2 else "secondary",
+        key="btn_compare"
+    ):
+        st.session_state.mode = "compare"
+        st.rerun()
+
+st.markdown("---")
 
 # ════════════════════════════════════════════════════
-# STEP 1 : Upload
+# MODE 1 — VALIDATION
 # ════════════════════════════════════════════════════
-st.markdown("""
-<div class="step-card">
-  <div class="step-header">
-    <div class="step-number">1</div>
-    <p class="step-title">Upload File</p>
-  </div>
-</div>""", unsafe_allow_html=True)
-
-upload_mode = st.radio(
-    "mode",
-    ["🗂️ Single DICOM (.dcm)", "📦 Multiple DICOMs (.zip)"],
-    horizontal=True,
-    label_visibility="collapsed"
-)
-
-if "Single" in upload_mode:
-    uploaded = st.file_uploader("Upload a DICOM file", type=["dcm", "DCM"])
-    if uploaded:
-        if uploaded.name != st.session_state.filename:
-            fb = uploaded.read()
-            st.session_state.ds = parse_dicom(fb)
-            st.session_state.tags_df = extract_tags(st.session_state.ds)
-            st.session_state.filename = uploaded.name
-            st.session_state.upload_mode = "single"
-            st.session_state.zip_bytes = None
-            st.session_state.modifications = {}
-            st.session_state.modified_bytes = None
-            st.session_state.mod_results = None
-            st.session_state.summary = None
-            st.session_state.queue_msg = None
-        st.success(f"✅ Loaded: **{st.session_state.filename}** — {len(st.session_state.tags_df)} tags")
-
-else:
-    uploaded = st.file_uploader("Upload a ZIP file", type=["zip"])
-    if uploaded:
-        if uploaded.name != st.session_state.filename:
-            zb = uploaded.read()
-            with zipfile.ZipFile(io.BytesIO(zb)) as zf:
-                file_list = [f for f in zf.namelist() if not f.endswith("/")]
-            with st.expander(f"📂 {len(file_list)} files in ZIP", expanded=False):
-                st.dataframe(pd.DataFrame({"File": file_list}), hide_index=True)
-
-            first_dcm_bytes = None
-            with zipfile.ZipFile(io.BytesIO(zb)) as zf:
-                for fname in zf.namelist():
-                    if fname.endswith("/"):
-                        continue
-                    fb = zf.read(fname)
-                    try:
-                        ds_test = pydicom.dcmread(io.BytesIO(fb), force=True)
-                        if len(ds_test) >= 3:
-                            first_dcm_bytes = fb
-                            break
-                    except Exception:
-                        continue
-
-            if first_dcm_bytes:
-                st.session_state.ds = parse_dicom(first_dcm_bytes)
-                st.session_state.tags_df = extract_tags(st.session_state.ds)
-                st.session_state.zip_bytes = zb
-                st.session_state.filename = uploaded.name
-                st.session_state.upload_mode = "zip"
-                st.session_state.modifications = {}
-                st.session_state.modified_bytes = None
-                st.session_state.mod_results = None
-                st.session_state.summary = None
-                st.session_state.queue_msg = None
-            else:
-                st.error("❌ No valid DICOM files found in ZIP.")
-
-        if st.session_state.filename:
-            st.success(f"✅ ZIP loaded: **{st.session_state.filename}**")
-
-
-# ════════════════════════════════════════════════════
-# STEP 2 : Edit
-# ════════════════════════════════════════════════════
-if st.session_state.ds is not None:
+if st.session_state.mode == "validate":
 
     st.markdown("""
-    <div class="step-card">
-      <div class="step-header">
-        <div class="step-number">2</div>
-        <p class="step-title">View & Edit Tags</p>
+    <div class="section-card">
+      <div class="section-title">
+        <div style="width:32px;height:32px;background:linear-gradient(135deg,#00d4ff,#0066ff);
+            border-radius:50%;display:flex;align-items:center;justify-content:center;
+            font-weight:800;color:white;font-size:15px;flex-shrink:0;">1</div>
+        Upload DICOM File
       </div>
-    </div>""", unsafe_allow_html=True)
+      <div style="font-size:13px;opacity:0.7;margin-top:-8px;">
+        Supports single <b>.dcm</b> file or <b>.zip</b> archive containing multiple DICOM files
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        search = st.text_input("🔍 Search Tags", placeholder="e.g. PatientName or 0010,0010")
-    with col2:
-        show_private = st.checkbox("Show Private Tags", value=True)
+    uploaded = st.file_uploader(
+        "Upload a DICOM file or ZIP archive",
+        type=["dcm","DCM","zip","ZIP"],
+        help="Single .dcm or .zip with multiple DICOM files",
+        key="uploader_validate"
+    )
 
-    df = pd.DataFrame(st.session_state.tags_df)
-    if not show_private:
-        df = df[df["Private"] == False]
-    if search:
-        esc = re.escape(search)
-        mask = (
-            df["Keyword"].str.contains(esc, case=False, na=False, regex=True) |
-            df["Tag"].str.contains(esc, case=False, na=False, regex=True) |
-            df["Value"].str.contains(esc, case=False, na=False, regex=True)
+    if uploaded:
+        with st.spinner("📂 Loading files..."):
+            file_dict = load_files_from_upload(uploaded)
+        if not file_dict:
+            st.error("❌ No valid DICOM files found.")
+            st.stop()
+        total_files = len(file_dict)
+        st.success(
+            f"✅ **{uploaded.name}** — "
+            f"{'ZIP archive' if uploaded.name.lower().endswith('.zip') else 'Single DICOM'} | "
+            f"**{total_files}** file(s) detected"
         )
-        df = df[mask]
+        with st.spinner("🔍 Validating DICOM tags (5-step standard check)..."):
+            all_results = []
+            prog = st.progress(0)
+            for i, (fname, fbytes) in enumerate(file_dict.items()):
+                all_results.append(validate_single_file(fname, fbytes))
+                prog.progress((i+1)/total_files)
+            prog.empty()
 
-    st.caption(f"Showing **{len(df)}** tag(s)")
+        valid_results = [r for r in all_results if not r.get("error")]
+        error_results = [r for r in all_results if r.get("error")]
+        fail_results  = [r for r in valid_results if r["status"] == "FAIL"]
+        pass_results  = [r for r in valid_results if r["status"] == "PASS"]
+        worst_files   = sorted(fail_results, key=lambda x: x["c1m_problems"], reverse=True)
+        total_pass    = len(pass_results)
+        total_fail    = len(fail_results)
+        total_error   = len(error_results)
 
-    col_a, col_b = st.columns([2, 3])
+        # Overall Summary
+        st.markdown("""
+        <div class="section-card">
+          <div class="section-title">
+            <div style="width:32px;height:32px;background:linear-gradient(135deg,#00d4ff,#0066ff);
+                border-radius:50%;display:flex;align-items:center;justify-content:center;
+                font-weight:800;color:white;font-size:15px;flex-shrink:0;">2</div>
+            Overall Summary
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if total_fail == 0 and total_error == 0:
+            oc,oi,ot = "overall-pass","✅","ALL PASS"
+            os_ = f"All {total_files} file(s) passed 5-step validation."
+        elif total_fail == total_files:
+            oc,oi,ot = "overall-fail","❌","ALL FAIL"
+            os_ = f"All {total_files} file(s) have Mandatory tag problems."
+        else:
+            oc,oi,ot = "overall-warning","⚠️","PARTIAL FAIL"
+            os_ = f"{total_fail} of {total_files} file(s) have Mandatory tag problems."
+
+        st.markdown(f"""
+        <div class="summary-card {oc}">
+            <div class="overall-title">{oi} {ot}</div>
+            <div class="overall-sub">{os_}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        pass_rate  = int(total_pass/total_files*100) if total_files > 0 else 0
+        rate_color = "#00c864" if pass_rate==100 else "#ffb400" if pass_rate>0 else "#ff4444"
+        c1,c2,c3,c4,c5 = st.columns(5)
+        for col,val,label,color in [
+            (c1,str(total_files),"Total Files","#00d4ff"),
+            (c2,str(total_pass), "✅ Pass",    "#00c864"),
+            (c3,str(total_fail), "❌ Fail",    "#ff4444"),
+            (c4,str(total_error),"⚠️ Error",   "#ffb400"),
+            (c5,f"{pass_rate}%", "Pass Rate", rate_color),
+        ]:
+            with col:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value" style="color:{color};">{val}</div>
+                    <div class="metric-label">{label}</div>
+                </div>""", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Most Problematic
+        if worst_files:
+            st.markdown("""
+            <div class="section-card">
+              <div class="section-title">
+                <div style="width:32px;height:32px;background:linear-gradient(135deg,#ff4444,#cc0000);
+                    border-radius:50%;display:flex;align-items:center;justify-content:center;
+                    font-weight:800;color:white;font-size:15px;flex-shrink:0;">3</div>
+                Most Problematic Files
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            for rank, r in enumerate(worst_files[:10], 1):
+                prob_tags  = [x for x in r["cat1"] if x["_is_problem"]]
+                prob_names = " · ".join([
+                    f'<b>{x["Name"]}</b>'
+                    + (f' <span style="font-size:10px;color:#ff8c00;">[{x["_issue"][:40]}]</span>'
+                       if x["_present"] and not x["_valid"] else "")
+                    for x in prob_tags
+                ])
+                cat3_label = f"{r['c3_valid']}/{r['c3_total']} ({r['mfr_name']})" if r["mfr_name"] else "N/A"
+                st.markdown(f"""
+                <div class="file-problem-card">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                        <span style="font-size:18px;font-weight:900;color:#ff4444;">#{rank}</span>
+                        <span style="font-size:14px;font-weight:700;">{r['filename']}</span>
+                        <span style="margin-left:auto;font-size:12px;background:rgba(255,60,60,0.2);
+                            color:#ff4444;padding:2px 10px;border-radius:20px;font-weight:700;">
+                            ❌ {r['c1m_problems']} Problem(s)
+                        </span>
+                    </div>
+                    <div style="font-size:12px;opacity:0.8;line-height:1.8;">
+                        🏭 <b>{r['mfr_raw']}</b>
+                        &nbsp;·&nbsp; Cat.1 Mandatory: {r['c1m_valid']}/{r['c1m_total']}
+                        &nbsp;·&nbsp; Invalid: {r['c1m_invalid']} &nbsp;·&nbsp; Missing: {r['c1m_missing']}
+                        &nbsp;·&nbsp; Cat.2: {r['c2_valid']}/{r['c2_total']}
+                        &nbsp;·&nbsp; Cat.3: {cat3_label}
+                    </div>
+                    <div style="font-size:12px;margin-top:6px;color:#ff6666;">Problems: {prob_names}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        for r in error_results:
+            st.markdown(f"""
+            <div class="file-problem-card">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:14px;font-weight:700;">{r['filename']}</span>
+                    <span style="margin-left:auto;font-size:12px;background:rgba(255,60,60,0.2);
+                        color:#ff4444;padding:2px 10px;border-radius:20px;font-weight:700;">⚠️ Read Error</span>
+                </div>
+                <div style="font-size:12px;opacity:0.7;margin-top:4px;">{r['error']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # File Detail
+        st.markdown("""
+        <div class="section-card">
+          <div class="section-title">
+            <div style="width:32px;height:32px;background:linear-gradient(135deg,#00d4ff,#0066ff);
+                border-radius:50%;display:flex;align-items:center;justify-content:center;
+                font-weight:800;color:white;font-size:15px;flex-shrink:0;">4</div>
+            File-by-File Detail
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        def make_label(r):
+            if r.get("error"):
+                return f"⚠️  {r['filename']}  [ERROR]"
+            icon = "✅" if r["status"] == "PASS" else "❌"
+            prob = r.get("c1m_problems", 0)
+            suf  = f"  — {prob} problem(s)" if prob > 0 else ""
+            return f"{icon}  {r['filename']}{suf}"
+
+        opts    = [make_label(r) for r in all_results]
+        def_idx = 0
+        if worst_files:
+            wf = worst_files[0]["filename"]
+            for i, r in enumerate(all_results):
+                if r["filename"] == wf:
+                    def_idx = i; break
+
+        sel_label  = st.selectbox("Select file", options=opts, index=def_idx, key="file_sel")
+        sel_result = all_results[opts.index(sel_label)]
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if sel_result.get("error"):
+            st.error(f"❌ Cannot read: **{sel_result['filename']}**\n\n{sel_result['error']}")
+        else:
+            r = sel_result
+            if r["status"] == "PASS":
+                bc,bi,bt = "overall-pass","✅","PASS"
+                bs = "All Mandatory-Public tags are present and valid."
+            else:
+                bc,bi,bt = "overall-fail","❌","FAIL"
+                bs = f"Cat.1 Mandatory — Missing: {r['c1m_missing']}, Invalid: {r['c1m_invalid']}."
+
+            st.markdown(f"""
+            <div class="summary-card {bc}" style="padding:16px 20px;margin-bottom:16px;">
+                <div style="font-size:20px;font-weight:900;letter-spacing:1px;margin-bottom:2px;">
+                    {bi} {bt} — {r['filename']}
+                </div>
+                <div style="font-size:13px;opacity:0.8;">{bs}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            mfr_display = r["mfr_name"] if r["mfr_name"] else "Not Detected"
+            mfr_color   = "#00d4ff" if r["mfr_name"] else "#ffb400"
+            st.markdown(f"""
+            <div style="margin-bottom:16px;">
+                <span class="manufacturer-badge" style="color:{mfr_color};">
+                    🏭 Manufacturer: <b>{mfr_display}</b>
+                    &nbsp;·&nbsp; Raw: <i>{r['mfr_raw']}</i>
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("""
+            <div class="std-info-box">
+                <b>🔬 Validation Engine v2.0</b> — 5-step DICOM Standard check:
+                ① VM count &nbsp; ② VR type/range/pattern (PS3.5) &nbsp;
+                ③ Enum values (PS3.3) &nbsp; ④ Tag-specific rules &nbsp; ⑤ Placeholder/zero detection
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.expander("🔍 Debug: All Tags in This DICOM File", expanded=False):
+                debug_df = get_all_tags_debug(r["ds"])
+                st.dataframe(debug_df, use_container_width=True, hide_index=True, height=400)
+
+            # Cat.1
+            mand_color = "#00c864" if r["c1m_problems"] == 0 else "#ff4444"
+            st.markdown(f"""
+            <div class="cat1-header">
+                <div style="font-size:17px;font-weight:800;margin-bottom:6px;">🔴 Category 1 — Mandatory-Public</div>
+                <div style="font-size:13px;opacity:0.85;line-height:1.9;">
+                    Valid: <span style="color:{mand_color};font-weight:700;">{r['c1m_valid']}/{r['c1m_total']}</span>
+                    &nbsp;·&nbsp; <span style="color:#ff8c00;">Invalid: {r['c1m_invalid']}</span>
+                    &nbsp;·&nbsp; <span style="color:#ff4444;">Missing: {r['c1m_missing']}</span>
+                    &nbsp;·&nbsp; Optional: <span style="color:#ffb400;">{r['c1o_valid']}/{r['c1o_total']}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            prob_tags = [x for x in r["cat1"] if x["_is_problem"]]
+            if prob_tags:
+                items = "".join([
+                    f'<div style="font-size:13px;margin:5px 0;display:flex;align-items:flex-start;gap:8px;">'
+                    f'<span>{"❌" if not x["_present"] else "⚠️"}</span>'
+                    f'<div><b>{x["Name"]}</b> '
+                    f'<span style="font-family:monospace;font-size:11px;opacity:0.5;">{x["Tag"]}</span>'
+                    + (f'<br><span style="color:#ff8c00;font-size:12px;">↳ {x["_issue"]}</span>' if x["_issue"] else "")
+                    + "</div></div>"
+                    for x in prob_tags
+                ])
+                st.markdown(f"""
+                <div style="background:rgba(255,60,60,0.1);border:1.5px solid rgba(255,60,60,0.4);
+                    border-left:4px solid #ff4444;border-radius:12px;padding:14px 20px;margin-bottom:12px;">
+                    <div style="font-weight:800;color:#ff4444;margin-bottom:8px;">❌ Mandatory Tag Problems</div>
+                    {items}
+                </div>
+                """, unsafe_allow_html=True)
+
+            df1 = to_display_df(r["cat1"], ["Name","Tag","Std VR","Std VM","Purpose","Type","Value","Issue","Status"])
+            st.dataframe(style_df(df1), use_container_width=True, hide_index=True, height=min(50+len(df1)*35,700))
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Cat.2
+            c2_color = "#00c864" if (r["c2_invalid"]+r["c2_missing"])==0 else "#ffb400"
+            st.markdown(f"""
+            <div class="cat2-header">
+                <div style="font-size:17px;font-weight:800;margin-bottom:6px;">🟠 Category 2 — Required-Public</div>
+                <div style="font-size:13px;opacity:0.85;">
+                    Valid: <span style="color:{c2_color};font-weight:700;">{r['c2_valid']}/{r['c2_total']}</span>
+                    &nbsp;·&nbsp; Invalid: {r['c2_invalid']} &nbsp;·&nbsp; Missing: {r['c2_missing']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            df2 = to_display_df(r["cat2"], ["Name","Tag","Std VR","Std VM","Note","Value","Issue","Status"])
+            st.dataframe(style_df(df2), use_container_width=True, hide_index=True, height=min(50+len(df2)*35,650))
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Cat.3
+            if r["mfr_name"]:
+                c3_color = "#00c864" if (r["c3_invalid"]+r["c3_missing"])==0 else "#ffb400"
+                st.markdown(f"""
+                <div class="cat3-header">
+                    <div style="font-size:17px;font-weight:800;margin-bottom:6px;">🔵 Category 3 — Required-Private-MRI</div>
+                    <div style="font-size:13px;opacity:0.85;">
+                        Manufacturer: <b>{r['mfr_name']}</b>
+                        &nbsp;·&nbsp; Valid: <span style="color:{c3_color};font-weight:700;">{r['c3_valid']}/{r['c3_total']}</span>
+                        &nbsp;·&nbsp; Invalid: {r['c3_invalid']} &nbsp;·&nbsp; Missing: {r['c3_missing']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                df3 = to_display_df(r["cat3"], ["Manufacturer","Name","Tag","Std VR","Std VM","Note","Value","Issue","Status"])
+                st.dataframe(style_df(df3), use_container_width=True, hide_index=True, height=min(50+len(df3)*35,700))
+            else:
+                st.markdown(f"""
+                <div class="no-mfr-box">
+                    <div style="font-size:17px;font-weight:800;margin-bottom:8px;">🔵 Category 3 — Required-Private-MRI</div>
+                    <div style="font-size:13px;">⚠️ Manufacturer not detected — Cat.3 skipped. Raw: <b>{r['mfr_raw']}</b></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # Export
+        st.markdown("""
+        <div class="section-card">
+          <div class="section-title">
+            <div style="width:32px;height:32px;background:linear-gradient(135deg,#00d4ff,#0066ff);
+                border-radius:50%;display:flex;align-items:center;justify-content:center;
+                font-weight:800;color:white;font-size:15px;flex-shrink:0;">5</div>
+            Export Report
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        tab1, tab2 = st.tabs(["📄 Current File", "📦 All Files"])
+        with tab1:
+            if not sel_result.get("error"):
+                df_exp = build_export_df(sel_result)
+                base   = sel_result["filename"].replace(".dcm","")
+                c1e,c2e = st.columns(2)
+                with c1e:
+                    st.download_button("⬇️ Download CSV",
+                        data=df_exp.to_csv(index=False).encode("utf-8"),
+                        file_name=f"tag_report_{base}.csv", mime="text/csv", use_container_width=True)
+                with c2e:
+                    st.download_button("⬇️ Download Excel",
+                        data=excel_export(df_exp),
+                        file_name=f"tag_report_{base}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True)
+        with tab2:
+            vfe = [r for r in all_results if not r.get("error")]
+            if vfe:
+                df_all    = pd.concat([build_export_df(r) for r in vfe], ignore_index=True)
+                base_name = uploaded.name.replace(".zip","").replace(".dcm","")
+                summary_rows = []
+                for res in all_results:
+                    if res.get("error"):
+                        summary_rows.append({"Filename": res["filename"], "Status": "ERROR",
+                            "Manufacturer":"—","Cat1 Valid":"—","Cat1 Invalid":"—","Cat1 Missing":"—",
+                            "Cat2 Valid":"—","Cat2 Invalid":"—","Cat2 Missing":"—",
+                            "Cat3 Valid":"—","Cat3 Invalid":"—","Cat3 Missing":"—","Error": res["error"]})
+                    else:
+                        summary_rows.append({"Filename": res["filename"], "Status": res["status"],
+                            "Manufacturer": res["mfr_raw"],
+                            "Cat1 Valid": res["c1m_valid"], "Cat1 Invalid": res["c1m_invalid"],
+                            "Cat1 Missing": res["c1m_missing"],
+                            "Cat2 Valid": res["c2_valid"], "Cat2 Invalid": res["c2_invalid"],
+                            "Cat2 Missing": res["c2_missing"],
+                            "Cat3 Valid": res["c3_valid"], "Cat3 Invalid": res["c3_invalid"],
+                            "Cat3 Missing": res["c3_missing"], "Error": ""})
+                df_sum = pd.DataFrame(summary_rows)
+                c1e,c2e = st.columns(2)
+                with c1e:
+                    st.download_button("⬇️ Download All CSV",
+                        data=df_all.to_csv(index=False).encode("utf-8"),
+                        file_name=f"tag_report_ALL_{base_name}.csv", mime="text/csv", use_container_width=True)
+                with c2e:
+                    st.download_button("⬇️ Download All Excel",
+                        data=excel_export(df_all, df_sum),
+                        file_name=f"tag_report_ALL_{base_name}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True)
+
+# ════════════════════════════════════════════════════
+# MODE 2 — COMPARE
+# ════════════════════════════════════════════════════
+else:
+    st.markdown("""
+    <div class="section-card">
+      <div class="section-title">
+        <span style="font-size:20px;">⚖️</span>
+        Compare Mode — Side-by-Side DICOM Diff
+      </div>
+      <div style="font-size:13px;opacity:0.7;margin-top:-8px;">
+        Upload two DICOM files to compare all tags · Highlighted differences · Inline value editing
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Upload 2 files ────────────────────────────────
+    col_a, col_b = st.columns(2)
     with col_a:
-        # ── Tag + Keyword 함께 표시 ──
-        tag_options = [
-            f"{row['Tag']}  {row['Keyword']}"
-            for _, row in df.iterrows()
-        ]
-        selected_option = st.selectbox(
-            "Select tag to edit",
-            tag_options,
-            key="tag_select"
-        )
-        # 실제 tag 코드만 추출
-        selected_tag = selected_option.split("  ")[0] if selected_option else None
+        st.markdown("""
+        <div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);
+            border-radius:12px;padding:12px 16px;margin-bottom:8px;">
+            <span style="font-weight:800;color:#00d4ff;">📄 File A</span>
+            <span style="font-size:12px;opacity:0.7;margin-left:8px;">Reference / Source</span>
+        </div>
+        """, unsafe_allow_html=True)
+        file_a = st.file_uploader("Upload File A (.dcm)", type=["dcm","DCM"], key="cmp_a")
 
     with col_b:
-        if selected_tag:
-            cur = df[df["Tag"] == selected_tag]["Value"].values[0]
-            default_val = st.session_state.modifications.get(selected_tag, cur)
-        else:
-            default_val = ""
-        new_value = st.text_input("New value", value=default_val)
+        st.markdown("""
+        <div style="background:rgba(140,80,255,0.08);border:1px solid rgba(140,80,255,0.3);
+            border-radius:12px;padding:12px 16px;margin-bottom:8px;">
+            <span style="font-weight:800;color:#a070ff;">📄 File B</span>
+            <span style="font-size:12px;opacity:0.7;margin-left:8px;">Target / Modified</span>
+        </div>
+        """, unsafe_allow_html=True)
+        file_b = st.file_uploader("Upload File B (.dcm)", type=["dcm","DCM"], key="cmp_b")
 
-    if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
-        val = new_value.strip()
-        if not selected_tag:
-            st.session_state.queue_msg = ("error", "Please select a tag.")
-        elif not val:
-            st.session_state.queue_msg = ("error", "Please enter a new value.")
-        else:
-            st.session_state.modifications[selected_tag] = val
-            st.session_state.modified_bytes = None
-            st.session_state.mod_results = None
-            st.session_state.summary = None
-            st.session_state.queue_msg = ("success", f"Queued: **{selected_tag}** → `{val}`")
+    if file_a and file_b:
+        with st.spinner("🔍 Comparing DICOM files..."):
+            try:
+                ds_a = pydicom.dcmread(io.BytesIO(file_a.read()), force=True)
+                ds_b = pydicom.dcmread(io.BytesIO(file_b.read()), force=True)
+            except Exception as e:
+                st.error(f"❌ Failed to read DICOM files: {e}")
+                st.stop()
 
-    if st.session_state.queue_msg:
-        t, m = st.session_state.queue_msg
-        if t == "success":
-            st.success(m)
-        else:
-            st.warning(m)
+            diff_rows = compare_dicom(ds_a, ds_b)
+            total, match, diff, only_a, only_b = diff_summary(diff_rows)
 
-    if st.session_state.modifications:
-        st.markdown("#### 📋 Pending Modifications")
-        atdf = pd.DataFrame(st.session_state.tags_df)
-        mod_data = []
-        for tag, val in st.session_state.modifications.items():
-            kw = atdf[atdf["Tag"] == tag]["Keyword"].values
-            ori = atdf[atdf["Tag"] == tag]["Value"].values
-            mod_data.append({
-                "Tag": tag,
-                "Keyword": kw[0] if len(kw) else "Unknown",
-                "Original": ori[0] if len(ori) else "-",
-                "New Value": val
+        # ── Diff Summary ──────────────────────────────
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if diff == 0 and only_a == 0 and only_b == 0:
+            banner_cls = "overall-pass"
+            banner_icon = "✅"
+            banner_title = "IDENTICAL"
+            banner_sub = "Both DICOM files have exactly the same tag values."
+        else:
+            banner_cls = "overall-warning"
+            banner_icon = "⚠️"
+            banner_title = f"{diff + only_a + only_b} DIFFERENCE(S) FOUND"
+            banner_sub = f"Value differences: {diff} · Only in A: {only_a} · Only in B: {only_b}"
+
+        st.markdown(f"""
+        <div class="summary-card {banner_cls}">
+            <div class="overall-title">{banner_icon} {banner_title}</div>
+            <div class="overall-sub">{banner_sub}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Metric cards
+        mc1,mc2,mc3,mc4,mc5 = st.columns(5)
+        for col,val,label,color in [
+            (mc1, str(total),  "Total Tags",      "#00d4ff"),
+            (mc2, str(match),  "✅ Identical",    "#00c864"),
+            (mc3, str(diff),   "⚠️ Different",   "#ff8c00"),
+            (mc4, str(only_a), "🔵 Only in A",   "#00d4ff"),
+            (mc5, str(only_b), "🟣 Only in B",   "#a070ff"),
+        ]:
+            with col:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value" style="color:{color};">{val}</div>
+                    <div class="metric-label">{label}</div>
+                </div>""", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Legend ────────────────────────────────────
+        st.markdown("""
+        <div class="diff-legend">
+            <div class="diff-legend-item">
+                <div class="diff-legend-dot" style="background:rgba(0,200,100,0.3);border:1px solid #00c864;"></div>
+                <span>✅ Identical — same value in both files</span>
+            </div>
+            <div class="diff-legend-item">
+                <div class="diff-legend-dot" style="background:rgba(255,140,0,0.4);border:1px solid #ff8c00;"></div>
+                <span>⚠️ Different — value exists in both but differs</span>
+            </div>
+            <div class="diff-legend-item">
+                <div class="diff-legend-dot" style="background:rgba(0,212,255,0.3);border:1px solid #00d4ff;"></div>
+                <span>🔵 Only in A — tag not present in File B</span>
+            </div>
+            <div class="diff-legend-item">
+                <div class="diff-legend-dot" style="background:rgba(140,80,255,0.3);border:1px solid #a070ff;"></div>
+                <span>🟣 Only in B — tag not present in File A</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Filter Controls ───────────────────────────
+        st.markdown("#### 🔎 Filter & Search")
+        fc1, fc2, fc3 = st.columns([2, 1, 1])
+        with fc1:
+            search_kw = st.text_input("Search by Tag / Keyword / Value", placeholder="e.g. PatientID, 0010,0020, Siemens", key="diff_search")
+        with fc2:
+            show_filter = st.selectbox("Show", ["All", "Different Only", "Only in A", "Only in B", "Identical Only"], key="diff_filter")
+        with fc3:
+            show_count = st.selectbox("Rows per page", [50, 100, 200, 500, 9999], key="diff_count")
+
+        # Apply filters
+        filtered = diff_rows
+        if show_filter == "Different Only":
+            filtered = [r for r in filtered if r["Diff"] == "diff"]
+        elif show_filter == "Only in A":
+            filtered = [r for r in filtered if r["Diff"] == "only_a"]
+        elif show_filter == "Only in B":
+            filtered = [r for r in filtered if r["Diff"] == "only_b"]
+        elif show_filter == "Identical Only":
+            filtered = [r for r in filtered if r["Diff"] == "match"]
+
+        if search_kw.strip():
+            kw = search_kw.strip().lower()
+            filtered = [r for r in filtered if
+                kw in r["Tag"].lower() or
+                kw in r["Keyword"].lower() or
+                kw in str(r["Value A"]).lower() or
+                kw in str(r["Value B"]).lower() or
+                kw in str(r["Std Name"]).lower()
+            ]
+
+        filtered_show = filtered[:show_count]
+        st.caption(f"Showing **{len(filtered_show)}** of **{len(filtered)}** filtered rows (total: {total})")
+
+        # ── Diff Table with Inline Edit ───────────────
+        st.markdown("#### 📊 Comparison Table")
+        st.markdown("""
+        <div style="font-size:13px;opacity:0.7;margin-bottom:12px;">
+            ✏️ <b>Inline Edit:</b> Expand a row to edit the value directly and apply to File B.
+            Pixel Data (7FE0,0010) is protected and cannot be modified.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # session_state for pending edits
+        if "diff_edits" not in st.session_state:
+            st.session_state.diff_edits = {}
+
+        # Display table
+        display_rows = []
+        for r in filtered_show:
+            diff_icon = {"match": "✅", "diff": "⚠️", "only_a": "🔵", "only_b": "🟣"}.get(r["Diff"], "")
+            display_rows.append({
+                "":         diff_icon,
+                "Tag":      r["Tag"],
+                "Keyword":  r["Keyword"],
+                "VR":       r["VR"],
+                "Std Name": r["Std Name"],
+                "Value A":  r["Value A"],
+                "Value B":  r["Value B"],
+                "Diff":     r["Diff"],
             })
-        st.dataframe(pd.DataFrame(mod_data), use_container_width=True, hide_index=True)
 
-        c1, c2 = st.columns([2, 3])
-        with c1:
-            if st.button("🗑️ Clear All", use_container_width=True):
-                st.session_state.modifications = {}
-                st.session_state.modified_bytes = None
-                st.session_state.mod_results = None
-                st.session_state.summary = None
-                st.session_state.queue_msg = None
-                st.rerun()
-        with c2:
-            tag_to_remove = st.selectbox(
-                "Remove specific tag",
-                list(st.session_state.modifications.keys()),
-                key="remove_select"
-            )
-            if st.button("❌ Remove Selected", use_container_width=True):
-                del st.session_state.modifications[tag_to_remove]
-                st.session_state.modified_bytes = None
-                st.session_state.mod_results = None
-                st.session_state.queue_msg = None
-                st.rerun()
-
-    with st.expander("📄 View All Tags", expanded=False):
-        def highlight_modified(row):
-            if row["Tag"] in st.session_state.modifications:
-                return ["background-color: rgba(0,212,255,0.1)"] * len(row)
-            return [""] * len(row)
+        df_diff = pd.DataFrame(display_rows)
         st.dataframe(
-            df.drop(columns=["Private"]).style.apply(highlight_modified, axis=1),
+            style_diff_df(df_diff),
             use_container_width=True,
-            height=400
+            hide_index=True,
+            height=min(60 + len(df_diff) * 35, 700)
         )
 
-    # ════════════════════════════════════════════════
-    # STEP 3 : Download
-    # ════════════════════════════════════════════════
-    st.markdown("""
-    <div class="step-card">
-      <div class="step-header">
-        <div class="step-number">3</div>
-        <p class="step-title">Apply & Download</p>
-      </div>
-    </div>""", unsafe_allow_html=True)
+        # ── Inline Edit Section ───────────────────────
+        diff_editable = [r for r in filtered_show if r["Diff"] in ("diff", "only_a", "only_b")]
 
-    if not st.session_state.modifications:
-        st.info("💡 No modifications queued yet.")
-    else:
-        st.write(f"**{len(st.session_state.modifications)} tag(s)** queued.")
+        if diff_editable:
+            st.markdown("#### ✏️ Inline Edit — Apply Changes to File B")
+            st.markdown("""
+            <div style="font-size:13px;opacity:0.7;margin-bottom:16px;">
+                Select tags below to edit their values in File B.
+                Changes are staged and applied together when you click <b>Apply & Download</b>.
+            </div>
+            """, unsafe_allow_html=True)
 
-        if st.session_state.upload_mode == "single":
-            if st.button("🚀 Apply Changes", type="primary", use_container_width=True):
-                with st.spinner("Processing..."):
-                    mb, results = apply_modifications_to_ds(
-                        st.session_state.ds,
-                        st.session_state.modifications
-                    )
-                st.session_state.modified_bytes = mb
-                st.session_state.mod_results = results
+            # Pending edits display
+            if st.session_state.diff_edits:
+                st.markdown(f"""
+                <div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);
+                    border-radius:12px;padding:12px 16px;margin-bottom:16px;">
+                    <span style="font-weight:700;color:#00c864;">
+                        ✅ {len(st.session_state.diff_edits)} pending edit(s) staged
+                    </span>
+                    <span style="font-size:12px;opacity:0.7;margin-left:8px;">
+                        — will be applied to File B on download
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
 
-            if st.session_state.mod_results:
-                st.dataframe(
-                    pd.DataFrame(st.session_state.mod_results),
-                    use_container_width=True,
-                    hide_index=True
-                )
+            # Edit rows
+            for row in diff_editable:
+                tag_str  = row["Tag"]
+                keyword  = row["Keyword"]
+                val_a    = row["Value A"]
+                val_b    = row["Value B"]
+                diff_t   = row["Diff"]
+                is_pixel = tag_str == "(7FE0,0010)"
 
-            if st.session_state.modified_bytes:
-                st.markdown(
-                    '<div class="success-banner">✅ File ready for download!</div>',
-                    unsafe_allow_html=True
-                )
-                st.download_button(
-                    label="⬇️ Download Modified DICOM",
-                    data=st.session_state.modified_bytes,
-                    file_name=f"modified_{st.session_state.filename}",
-                    mime="application/octet-stream",
-                    use_container_width=True
-                )
+                diff_color = {"diff": "#ff8c00", "only_a": "#00d4ff", "only_b": "#a070ff"}.get(diff_t, "#888")
+                diff_label = {"diff": "⚠️ Different", "only_a": "🔵 Only in A", "only_b": "🟣 Only in B"}.get(diff_t, "")
 
-        elif st.session_state.upload_mode == "zip":
-            st.info("📦 All DICOM files in ZIP will be modified.")
+                with st.expander(
+                    f"{diff_label}  |  {tag_str}  {keyword}"
+                    + ("  🔒 Protected" if is_pixel else ""),
+                    expanded=False
+                ):
+                    if is_pixel:
+                        st.warning("🔒 Pixel Data (7FE0,0010) is protected and cannot be modified.")
+                    else:
+                        ec1, ec2 = st.columns(2)
+                        with ec1:
+                            st.markdown(f"""
+                            <div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);
+                                border-radius:10px;padding:12px;margin-bottom:8px;">
+                                <div style="font-size:11px;font-weight:700;color:#00d4ff;margin-bottom:4px;">
+                                    📄 FILE A (Reference)
+                                </div>
+                                <div style="font-size:13px;word-break:break-all;">{val_a}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with ec2:
+                            st.markdown(f"""
+                            <div style="background:rgba(140,80,255,0.08);border:1px solid rgba(140,80,255,0.3);
+                                border-radius:10px;padding:12px;margin-bottom:8px;">
+                                <div style="font-size:11px;font-weight:700;color:#a070ff;margin-bottom:4px;">
+                                    📄 FILE B (Current)
+                                </div>
+                                <div style="font-size:13px;word-break:break-all;">{val_b}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
-            if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
-                with st.spinner("Processing ZIP... Please wait."):
-                    rb, all_results, summary = process_zip(
-                        st.session_state.zip_bytes,
-                        st.session_state.modifications
-                    )
-                st.session_state.modified_bytes = rb
-                st.session_state.mod_results = all_results
-                st.session_state.summary = summary
+                        # Current staged value
+                        current_staged = st.session_state.diff_edits.get(tag_str, "")
+                        default_val    = current_staged if current_staged else (val_a if diff_t in ("diff","only_a") else val_b)
+                        if "[Binary" in str(default_val) or "[Sequence" in str(default_val):
+                            st.info("ℹ️ Binary/Sequence tags cannot be edited as text.")
+                        else:
+                            new_val = st.text_input(
+                                f"New value for File B — {tag_str} ({keyword})",
+                                value=str(default_val) if default_val != "— NOT PRESENT —" else "",
+                                key=f"edit_{tag_str}",
+                                help=f"VR: {row['VR']} · Std Name: {row['Std Name']}"
+                            )
+                            bc1, bc2 = st.columns([1, 1])
+                            with bc1:
+                                if st.button(f"✅ Stage this edit", key=f"stage_{tag_str}", use_container_width=True):
+                                    st.session_state.diff_edits[tag_str] = new_val
+                                    st.success(f"Staged: {tag_str} → '{new_val}'")
+                                    st.rerun()
+                            with bc2:
+                                if tag_str in st.session_state.diff_edits:
+                                    if st.button(f"🗑️ Remove staged edit", key=f"unstage_{tag_str}", use_container_width=True):
+                                        del st.session_state.diff_edits[tag_str]
+                                        st.rerun()
 
-            if st.session_state.summary is not None:
-                s = st.session_state.summary
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("📁 Total", s["total"])
-                c2.metric("✅ Processed", s["success"])
-                c3.metric("⏭️ Skipped", s["skipped"])
-                c4.metric("❌ Errors", s["errors"])
-                if s["success"] == 0:
-                    st.error("❌ No DICOM files were processed!")
+            # ── Apply & Download ──────────────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("#### 💾 Apply & Download Modified File B")
 
-            if st.session_state.mod_results:
-                with st.expander("📊 Modification Report", expanded=False):
-                    st.dataframe(
-                        pd.DataFrame(st.session_state.mod_results),
+            if st.session_state.diff_edits:
+                st.markdown(f"""
+                <div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);
+                    border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+                    <div style="font-weight:800;color:#00c864;margin-bottom:10px;">
+                        📋 Staged Edits ({len(st.session_state.diff_edits)} tag(s))
+                    </div>
+                """, unsafe_allow_html=True)
+                for ts, nv in st.session_state.diff_edits.items():
+                    st.markdown(f"""
+                    <div style="font-size:13px;padding:4px 0;border-bottom:1px solid rgba(42,53,80,0.4);">
+                        <span style="font-family:monospace;color:#00d4ff;">{ts}</span>
+                        &nbsp;→&nbsp;
+                        <span style="color:#e8eaf0;">'{nv}'</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                dl_col1, dl_col2, dl_col3 = st.columns([2, 1, 1])
+                with dl_col1:
+                    # Re-read file_b for modification
+                    file_b.seek(0)
+                    ds_b_fresh = pydicom.dcmread(io.BytesIO(file_b.read()), force=True)
+                    modified_bytes = save_modified_dicom(ds_b_fresh, st.session_state.diff_edits)
+                    out_name = file_b.name.replace(".dcm","") + "_modified.dcm"
+                    st.download_button(
+                        "⬇️ Download Modified File B (.dcm)",
+                        data=modified_bytes,
+                        file_name=out_name,
+                        mime="application/octet-stream",
                         use_container_width=True,
-                        height=400,
-                        hide_index=True
+                        type="primary"
                     )
+                with dl_col2:
+                    # Export change log
+                    log_rows = [{"Tag": ts, "New Value": nv} for ts, nv in st.session_state.diff_edits.items()]
+                    log_df   = pd.DataFrame(log_rows)
+                    st.download_button(
+                        "📋 Download Change Log (CSV)",
+                        data=log_df.to_csv(index=False).encode("utf-8"),
+                        file_name="diff_change_log.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                with dl_col3:
+                    if st.button("🗑️ Clear All Staged Edits", use_container_width=True):
+                        st.session_state.diff_edits = {}
+                        st.rerun()
+            else:
+                st.info("💡 Stage at least one edit above to enable download.")
 
-            if st.session_state.modified_bytes is not None:
-                zip_name = st.session_state.filename.replace(".zip", "_modified.zip")
-                st.markdown(
-                    '<div class="success-banner">✅ ZIP ready for download!</div>',
-                    unsafe_allow_html=True
-                )
-                st.download_button(
-                    label="⬇️ Download Modified ZIP",
-                    data=st.session_state.modified_bytes,
-                    file_name=zip_name,
-                    mime="application/zip",
-                    use_container_width=True,
-                    type="primary"
-                )
+        # ── Export Diff Report ────────────────────────
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 📤 Export Diff Report")
+        exp_rows = []
+        for r in diff_rows:
+            exp_rows.append({
+                "Tag":      r["Tag"],
+                "Keyword":  r["Keyword"],
+                "VR":       r["VR"],
+                "Std Name": r["Std Name"],
+                "Value A":  r["Value A"],
+                "Value B":  r["Value B"],
+                "Diff Type": r["Diff"],
+            })
+        df_exp_diff = pd.DataFrame(exp_rows)
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.download_button(
+                "⬇️ Download Full Diff CSV",
+                data=df_exp_diff.to_csv(index=False).encode("utf-8"),
+                file_name=f"dicom_diff_{file_a.name}_vs_{file_b.name}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with ec2:
+            # Excel with color
+            buf_xl = io.BytesIO()
+            with pd.ExcelWriter(buf_xl, engine="openpyxl") as writer:
+                df_exp_diff.to_excel(writer, index=False, sheet_name="DICOM Diff")
+                ws = writer.sheets["DICOM Diff"]
+                from openpyxl.styles import PatternFill
+                diff_col_idx = None
+                for i, cell in enumerate(ws[1]):
+                    if cell.value == "Diff Type":
+                        diff_col_idx = i
+                        break
+                color_map = {"match": "CCFFDD", "diff": "FFE0CC", "only_a": "CCF0FF", "only_b": "E8CCFF"}
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                    dt    = row[diff_col_idx].value if diff_col_idx is not None else "match"
+                    color = color_map.get(dt, "FFFFFF")
+                    for cell in row:
+                        cell.fill = PatternFill("solid", fgColor=color)
+            st.download_button(
+                "⬇️ Download Full Diff Excel",
+                data=buf_xl.getvalue(),
+                file_name=f"dicom_diff_{file_a.name}_vs_{file_b.name}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
+    elif file_a or file_b:
+        missing = "File B" if file_a else "File A"
+        st.info(f"📂 Please also upload **{missing}** to start comparison.")
+    else:
+        st.markdown("""
+        <div style="text-align:center;padding:60px 20px;opacity:0.5;">
+            <div style="font-size:48px;margin-bottom:16px;">⚖️</div>
+            <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Upload Two DICOM Files to Compare</div>
+            <div style="font-size:14px;">File A (Reference) and File B (Target) — all tag differences will be highlighted</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ── Sidebar ──────────────────────────────────────────
+# ════════════════════════════════════════════════════
+# Sidebar
+# ════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown(f"""
-    <div style="text-align:center; padding:16px 0 20px;">
+    <div style="text-align:center;padding:16px 0 20px;">
         <div style="width:56px;height:56px;margin:0 auto 10px;
-            display:flex;align-items:center;justify-content:center;">
-            {sidebar_logo_html}
-        </div>
+            display:flex;align-items:center;justify-content:center;">{sidebar_logo_html}</div>
         <div style="font-size:14px;font-weight:800;letter-spacing:2px;
             background:linear-gradient(90deg,#00d4ff,#0066ff);
-            -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-            SwiftMR</div>
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;">SwiftMR</div>
         <div style="font-size:11px;color:#8892a4;margin-top:2px;letter-spacing:1px;">
-            DICOM Header Editor</div>
+            DICOM Tag Validator v3.0</div>
     </div>
     """, unsafe_allow_html=True)
 
     st.divider()
-
-    st.markdown('<div class="sidebar-section-title">📖 How to Use</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="mode-label">Single File</div>
-    <div class="how-step"><div class="how-step-num">1</div><div class="how-step-text">Select <b>Single DICOM</b> mode</div></div>
-    <div class="how-step"><div class="how-step-num">2</div><div class="how-step-text">Upload a <code>.dcm</code> file</div></div>
-    <div class="how-step"><div class="how-step-num">3</div><div class="how-step-text">Select tag → Enter new value</div></div>
-    <div class="how-step"><div class="how-step-num">4</div><div class="how-step-text">Queue Change → Apply → Download</div></div>
-    <div class="mode-label" style="margin-top:14px;">Batch ZIP</div>
-    <div class="how-step"><div class="how-step-num">1</div><div class="how-step-text">Select <b>Multiple DICOMs</b> mode</div></div>
-    <div class="how-step"><div class="how-step-num">2</div><div class="how-step-text">Upload a <code>.zip</code> file</div></div>
-    <div class="how-step"><div class="how-step-num">3</div><div class="how-step-text">Select tag → Enter new value</div></div>
-    <div class="how-step"><div class="how-step-num">4</div><div class="how-step-text">Queue → Apply to All → Download ZIP</div></div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">🔧 Current Mode</div>', unsafe_allow_html=True)
+    mode_display = "🔍 Validation Mode" if st.session_state.mode == "validate" else "⚖️ Compare Mode"
+    st.markdown(f'<div style="font-size:14px;font-weight:700;color:#00d4ff;">{mode_display}</div>', unsafe_allow_html=True)
 
     st.divider()
-
-    st.markdown('<div class="sidebar-section-title">⚠️ Notes</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="note-item"><span class="note-icon">🔒</span><span>Original files are <b>never modified</b></span></div>
-    <div class="note-item"><span class="note-icon">📦</span><span>Tags applied to <b>ALL</b> DICOM files in ZIP</span></div>
-    <div class="note-item"><span class="note-icon">🚫</span><span>Do <b>not</b> upload real patient data (PHI)</span></div>
-    """, unsafe_allow_html=True)
+    if st.session_state.mode == "validate":
+        st.markdown('<div class="sidebar-section-title">🔬 Validation Engine</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="font-size:12px;line-height:2.0;">
+            ① <b>VM</b> — DicomDictionary count check<br>
+            ② <b>VR</b> — type / range / pattern (PS3.5)<br>
+            ③ <b>Enum</b> — allowed values (PS3.3)<br>
+            ④ <b>Special</b> — tag-specific rules (PS3.3)<br>
+            ⑤ <b>Placeholder</b> — zero / empty detection
+        </div>
+        """, unsafe_allow_html=True)
+        st.divider()
+        st.markdown('<div class="sidebar-section-title">📋 Categories</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="font-size:13px;line-height:2.0;">
+            <span style="color:#ff4444;font-weight:700;">🔴 Cat.1</span> Mandatory-Public<br>
+            <span style="color:#ff8c00;font-weight:700;">🟠 Cat.2</span> Required-Public<br>
+            <span style="color:#00d4ff;font-weight:700;">🔵 Cat.3</span> Required-Private-MRI
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="sidebar-section-title">⚖️ Compare Features</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="font-size:12px;line-height:2.0;">
+            ✅ <b>Full tag diff</b> — all tags compared<br>
+            ⚠️ <b>Value diff</b> — highlighted in orange<br>
+            🔵 <b>Only in A</b> — highlighted in blue<br>
+            🟣 <b>Only in B</b> — highlighted in purple<br>
+            ✏️ <b>Inline edit</b> — stage & apply to B<br>
+            💾 <b>Download</b> — modified .dcm + log CSV<br>
+            📊 <b>Export</b> — full diff CSV / Excel
+        </div>
+        """, unsafe_allow_html=True)
+        st.divider()
+        if "diff_edits" in st.session_state and st.session_state.diff_edits:
+            st.markdown('<div class="sidebar-section-title">✏️ Staged Edits</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:20px;font-weight:900;color:#00c864;">{len(st.session_state.diff_edits)}</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:12px;color:#8892a4;">tag(s) pending</div>', unsafe_allow_html=True)
 
     st.divider()
+    st.markdown('<div class="sidebar-section-title">🏭 Supported Manufacturers</div>', unsafe_allow_html=True)
+    for mfr in MANUFACTURER_KEYWORDS.keys():
+        st.markdown(f'<div style="font-size:13px;padding:2px 0;">· {mfr}</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-section-title">🔧 Common Tags</div>', unsafe_allow_html=True)
-
-    tab1, tab2, tab3 = st.tabs(["Standard", "AIRS Upload", "AIRS Recon"])
-
-    with tab1:
-        st.markdown("""
-        <div class="tag-row"><span class="tag-code">(0020,000E)</span><span class="tag-name">SeriesInstanceUID</span></div>
-        <div class="tag-row"><span class="tag-code">(0020,000D)</span><span class="tag-name">StudyInstanceUID</span></div>
-        <div class="tag-row"><span class="tag-code">(0008,103E)</span><span class="tag-name">SeriesDescription</span></div>
-        <div class="tag-row"><span class="tag-code">(0010,0010)</span><span class="tag-name">PatientName</span></div>
-        <div class="tag-row"><span class="tag-code">(0008,0060)</span><span class="tag-name">Modality</span></div>
-        <div class="tag-row"><span class="tag-code">(2001,9000)</span><span class="tag-name">Private (Philips)</span></div>
-        """, unsafe_allow_html=True)
-
-    with tab2:
-        st.markdown("""
-        <div class="tag-row"><span class="tag-code">(00E1,1010)</span><span class="tag-name">StudyId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1011)</span><span class="tag-name">SeriesId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1012)</span><span class="tag-name">ImageId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1014)</span><span class="tag-name">UploadId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1015)</span><span class="tag-name">DeviceId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1030)</span><span class="tag-name">DispatchUnitId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1031)</span><span class="tag-name">PostProcessingType</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1032)</span><span class="tag-name">SourceDispatchUnitId</span><span class="tag-vr">SH</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1033)</span><span class="tag-name">ADCType</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1034)</span><span class="tag-name">ADCNoiseThreshold</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1035)</span><span class="tag-name">BValue</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1036)</span><span class="tag-name">IsMarked</span><span class="tag-vr">CS</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1037)</span><span class="tag-name">NumberOfProjections</span><span class="tag-vr">IS</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1038)</span><span class="tag-name">RadialAngle</span><span class="tag-vr">IS</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1039)</span><span class="tag-name">Zoom</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1040)</span><span class="tag-name">SliceOrder</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1041)</span><span class="tag-name">Orientation</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1042)</span><span class="tag-name">Gap</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1043)</span><span class="tag-name">Thickness</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1044)</span><span class="tag-name">CalculatedBvalue</span><span class="tag-vr">SL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1045)</span><span class="tag-name">PostprocessingMode</span><span class="tag-vr">LO</span></div>
-        """, unsafe_allow_html=True)
-
-    with tab3:
-        st.markdown("""
-        <div class="tag-row"><span class="tag-code">(00E1,1020)</span><span class="tag-name">InputSnr</span><span class="tag-vr">FL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1021)</span><span class="tag-name">OutputSnr</span><span class="tag-vr">FL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1022)</span><span class="tag-name">DenoisingLevel</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1023)</span><span class="tag-name">Sharpness</span><span class="tag-vr">FL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1024)</span><span class="tag-name">ModelPath</span><span class="tag-vr">OB</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1025)</span><span class="tag-name">ModelHeader</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1026)</span><span class="tag-name">ModelVersion</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1034)</span><span class="tag-name">ADCNoiseThreshold</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1035)</span><span class="tag-name">BValue</span><span class="tag-vr">LO</span></div>
-        """, unsafe_allow_html=True)
+    st.divider()
+    st.markdown('<div class="sidebar-section-title">🔐 Data Privacy</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="font-size:12px;line-height:1.9;opacity:0.85;">
+        💻 In-memory processing only<br>
+        🌐 Streamlit Cloud (Snowflake) servers<br>
+        🔒 PHI → use self-hosted deployment<br>
+        ✅ De-identified files recommended
+    </div>
+    """, unsafe_allow_html=True)
 
     st.divider()
     st.markdown("""
     <div style="text-align:center;font-size:11px;color:#4a5568;padding:8px 0;">
-        © 2026 AIRS Medical Inc.<br>All rights reserved.<br>Global Technical Suppport
+        © 2024 AIRS Medical Inc.<br>All rights reserved.
     </div>
     """, unsafe_allow_html=True)
