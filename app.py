@@ -131,6 +131,12 @@ st.markdown("""
     .dl-target-title { color: #ffb74d !important; }
     .dl-target-desc  { color: #c8d0dc !important; }
     .table-info-text { color: #8892a4 !important; }
+    .page-ctrl-box {
+        background: rgba(0,212,255,0.05) !important;
+        border: 1px solid rgba(0,212,255,0.15) !important;
+    }
+    .page-num { color: #00d4ff !important; }
+    .page-total { color: #8892a4 !important; }
 }
 @media (prefers-color-scheme: light) {
     .stApp { background-color: #f0f4f8 !important; }
@@ -214,6 +220,12 @@ st.markdown("""
     .dl-target-title { color: #e65100 !important; }
     .dl-target-desc  { color: #3a4a5a !important; }
     .table-info-text { color: #5a6a7a !important; }
+    .page-ctrl-box {
+        background: rgba(0,102,255,0.04) !important;
+        border: 1px solid rgba(0,102,255,0.15) !important;
+    }
+    .page-num { color: #0066ff !important; }
+    .page-total { color: #5a6a7a !important; }
 }
 
 /* 공통 */
@@ -240,9 +252,7 @@ st.markdown("""
     border-radius:20px; font-size:12px;
     font-weight:600; letter-spacing:1px;
 }
-.step-card {
-    border-radius:16px; padding:20px 24px; margin-bottom:16px;
-}
+.step-card { border-radius:16px; padding:20px 24px; margin-bottom:16px; }
 .step-header { display:flex; align-items:center; gap:12px; }
 .step-number {
     width:36px; height:36px;
@@ -274,8 +284,7 @@ st.markdown("""
 .mode-label {
     font-size:11px; font-weight:700;
     letter-spacing:1px; text-transform:uppercase;
-    margin:12px 0 6px;
-    display:flex; align-items:center; gap:6px;
+    margin:12px 0 6px; display:flex; align-items:center; gap:6px;
 }
 .mode-label::after { content:''; flex:1; height:1px; }
 .note-item {
@@ -308,26 +317,21 @@ st.markdown("""
     border-radius:12px; padding:16px 20px; margin-bottom:20px;
 }
 .apply-hint {
-    border-radius:8px; padding:12px 16px;
-    font-size:13px; font-weight:500;
+    border-radius:8px; padding:12px 16px; font-size:13px; font-weight:500;
 }
-.dl-target-box {
-    border-radius:14px; padding:20px 24px; margin:16px 0;
-}
+.dl-target-box { border-radius:14px; padding:20px 24px; margin:16px 0; }
 .dl-target-title {
     font-size:18px; font-weight:800; margin-bottom:6px;
     display:flex; align-items:center; gap:10px;
 }
 .dl-target-desc { font-size:13px; line-height:1.6; margin-top:8px; }
-.table-info-bar {
-    display:flex; align-items:center; justify-content:space-between;
-    margin-bottom:6px; padding:4px 2px;
+.table-info-text { font-size:13px; margin-bottom:6px; }
+.page-ctrl-box {
+    border-radius:10px; padding:8px 12px; margin-bottom:8px;
+    display:flex; align-items:center; justify-content:center; gap:0;
 }
-.table-info-text { font-size:13px; }
-.page-label {
-    font-size:13px; font-weight:600;
-    display:flex; align-items:center; gap:6px;
-}
+.page-num  { font-size:20px; font-weight:800; min-width:32px; text-align:center; }
+.page-total{ font-size:14px; font-weight:500; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -344,6 +348,53 @@ st.markdown(f"""
     <div class="airs-badge">v2.0</div>
 </div>
 """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════
+# PAGE CONTROL WIDGET
+# ══════════════════════════════════════════════════════
+def page_control(key: str, total_pages: int) -> int:
+    """◀◀  ◀  Page N / T  ▶  ▶▶  형태의 페이지 컨트롤"""
+    cur_key = f"{key}_cur"
+    if cur_key not in st.session_state:
+        st.session_state[cur_key] = 1
+    # 범위 보정
+    st.session_state[cur_key] = max(
+        1, min(st.session_state[cur_key], total_pages)
+    )
+    cur = st.session_state[cur_key]
+
+    c1, c2, c3, c4, c5 = st.columns([1, 1, 4, 1, 1])
+    with c1:
+        if st.button("◀◀", key=f"{key}_first", use_container_width=True,
+                     disabled=(cur == 1)):
+            st.session_state[cur_key] = 1
+            st.rerun()
+    with c2:
+        if st.button("◀", key=f"{key}_prev", use_container_width=True,
+                     disabled=(cur <= 1)):
+            st.session_state[cur_key] -= 1
+            st.rerun()
+    with c3:
+        st.markdown(
+            f'<div class="page-ctrl-box">'
+            f'<span class="page-total" style="margin-right:8px;">Page</span>'
+            f'<span class="page-num">{cur}</span>'
+            f'<span class="page-total">&nbsp;/&nbsp;{total_pages}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with c4:
+        if st.button("▶", key=f"{key}_next", use_container_width=True,
+                     disabled=(cur >= total_pages)):
+            st.session_state[cur_key] += 1
+            st.rerun()
+    with c5:
+        if st.button("▶▶", key=f"{key}_last", use_container_width=True,
+                     disabled=(cur == total_pages)):
+            st.session_state[cur_key] = total_pages
+            st.rerun()
+
+    return st.session_state[cur_key]
 
 # ══════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
@@ -494,7 +545,9 @@ def apply_staged_to_zip(zip_bytes: bytes, modifications: dict):
                 skip_count += 1
                 continue
             try:
-                modified_bytes, results = apply_modifications_to_ds(ds, modifications)
+                modified_bytes, results = apply_modifications_to_ds(
+                    ds, modifications
+                )
                 for r in results:
                     r["File"] = filename
                 all_results.extend(results)
@@ -631,12 +684,9 @@ defaults = {
     "cmp_a_zip_bytes": None, "cmp_b_zip_bytes": None,
     "cmp_a_zip_list": [], "cmp_b_zip_list": [],
     "cmp_a_sel": "", "cmp_b_sel": "",
-    "cmp_df": None,
-    "cmp_staged": {},
-    "cmp_result_bytes":   None,
-    "cmp_result_zip":     None,
-    "cmp_result_summary": None,
-    "cmp_result_log":     None,
+    "cmp_df": None, "cmp_staged": {},
+    "cmp_result_bytes": None, "cmp_result_zip": None,
+    "cmp_result_summary": None, "cmp_result_log": None,
     "cmp_ds_b": None,
     "app_mode": "editor",
     "phi_confirmed_once": False,
@@ -769,6 +819,8 @@ if st.session_state.app_mode == "editor":
                 st.session_state.mod_results   = None
                 st.session_state.summary       = None
                 st.session_state.queue_msg     = None
+                # 페이지 리셋
+                st.session_state["editor_page_cur"] = 1
 
             n_tags = len(st.session_state.tags_df) if st.session_state.tags_df else 0
             st.markdown(f"""
@@ -811,6 +863,7 @@ if st.session_state.app_mode == "editor":
                     st.session_state.mod_results   = None
                     st.session_state.summary       = None
                     st.session_state.queue_msg     = None
+                    st.session_state["editor_page_cur"] = 1
                 else:
                     st.error("❌ No valid DICOM files found in ZIP.")
 
@@ -829,7 +882,9 @@ if st.session_state.app_mode == "editor":
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                with st.expander(f"📂 View {len(file_list)} files in ZIP", expanded=False):
+                with st.expander(
+                    f"📂 View {len(file_list)} files in ZIP", expanded=False
+                ):
                     st.dataframe(
                         pd.DataFrame({"File": file_list}),
                         hide_index=True, use_container_width=True,
@@ -891,7 +946,6 @@ if st.session_state.app_mode == "editor":
             df = df[df["Private"] == False]
         elif show_private == "Private Only":
             df = df[df["Private"] == True]
-
         if search:
             esc  = re.escape(search)
             mask = (
@@ -905,30 +959,16 @@ if st.session_state.app_mode == "editor":
 
         # ── Tag Table ─────────────────────────────────
         st.markdown("### 🗂️ Tag Table")
+        st.markdown(
+            f'<div class="table-info-text">'
+            f'Showing <b>{min(ed_page_size, len(df))}</b> of '
+            f'<b>{len(df)}</b> tags &nbsp;·&nbsp; total: {n_total}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
-        # 테이블 바로 위: Showing 정보 + 페이지 컨트롤
-        tbl_c1, tbl_c2, tbl_c3 = st.columns([4, 1, 1])
-        with tbl_c1:
-            st.markdown(
-                f'<div class="table-info-text" style="padding-top:6px;">'
-                f'Showing <b>{min(ed_page_size, len(df))}</b> of '
-                f'<b>{len(df)}</b> tags &nbsp;·&nbsp; total: {n_total}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with tbl_c2:
-            st.markdown(
-                '<div style="text-align:right;padding-top:6px;font-size:13px;'
-                'font-weight:600;">Page</div>',
-                unsafe_allow_html=True,
-            )
-        with tbl_c3:
-            ed_page = st.number_input(
-                f"/ {ed_total_pages}",
-                min_value=1, max_value=ed_total_pages, value=1,
-                key="editor_page",
-                label_visibility="visible",
-            )
+        # ✅ 페이지 컨트롤 (테이블 바로 위)
+        ed_page = page_control("editor_page", ed_total_pages)
 
         df_page_ed = df.iloc[
             (ed_page - 1) * ed_page_size : ed_page * ed_page_size
@@ -1185,7 +1225,6 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Upload A & B ─────────────────────────────────
     col_a, col_b = st.columns(2)
 
     with col_a:
@@ -1213,6 +1252,7 @@ else:
                     st.session_state.cmp_a_sel       = ""
                     st.session_state.cmp_df          = None
                     st.session_state.cmp_staged      = {}
+                    st.session_state["cmp_page_cur"] = 1
             else:
                 if up_a.name != st.session_state.cmp_a_name:
                     st.session_state.cmp_a_bytes     = raw
@@ -1222,6 +1262,7 @@ else:
                     st.session_state.cmp_a_sel       = ""
                     st.session_state.cmp_df          = None
                     st.session_state.cmp_staged      = {}
+                    st.session_state["cmp_page_cur"] = 1
 
         if st.session_state.cmp_a_zip_list:
             st.success(
@@ -1239,8 +1280,9 @@ else:
                 st.session_state.cmp_a_bytes = read_dcm_from_zip(
                     st.session_state.cmp_a_zip_bytes, sel_a
                 )
-                st.session_state.cmp_df     = None
-                st.session_state.cmp_staged = {}
+                st.session_state.cmp_df          = None
+                st.session_state.cmp_staged      = {}
+                st.session_state["cmp_page_cur"] = 1
         elif st.session_state.cmp_a_bytes:
             st.success(f"✅ A: **{st.session_state.cmp_a_name}**")
 
@@ -1269,6 +1311,7 @@ else:
                     st.session_state.cmp_b_sel       = ""
                     st.session_state.cmp_df          = None
                     st.session_state.cmp_staged      = {}
+                    st.session_state["cmp_page_cur"] = 1
             else:
                 if up_b.name != st.session_state.cmp_b_name:
                     st.session_state.cmp_b_bytes     = raw
@@ -1278,6 +1321,7 @@ else:
                     st.session_state.cmp_b_sel       = ""
                     st.session_state.cmp_df          = None
                     st.session_state.cmp_staged      = {}
+                    st.session_state["cmp_page_cur"] = 1
 
         if st.session_state.cmp_b_zip_list:
             st.success(
@@ -1295,8 +1339,9 @@ else:
                 st.session_state.cmp_b_bytes = read_dcm_from_zip(
                     st.session_state.cmp_b_zip_bytes, sel_b
                 )
-                st.session_state.cmp_df     = None
-                st.session_state.cmp_staged = {}
+                st.session_state.cmp_df          = None
+                st.session_state.cmp_staged      = {}
+                st.session_state["cmp_page_cur"] = 1
         elif st.session_state.cmp_b_bytes:
             st.success(f"✅ B: **{st.session_state.cmp_b_name}**")
 
@@ -1312,17 +1357,17 @@ else:
             with st.spinner("Comparing DICOM headers..."):
                 ds_a = parse_dicom(st.session_state.cmp_a_bytes)
                 ds_b = parse_dicom(st.session_state.cmp_b_bytes)
-                st.session_state.cmp_df           = compare_dicom(ds_a, ds_b)
-                st.session_state.cmp_ds_b         = ds_b
-                st.session_state.cmp_staged       = {}
-                st.session_state.cmp_result_bytes = None
-                st.session_state.cmp_result_zip   = None
+                st.session_state.cmp_df             = compare_dicom(ds_a, ds_b)
+                st.session_state.cmp_ds_b           = ds_b
+                st.session_state.cmp_staged         = {}
+                st.session_state.cmp_result_bytes   = None
+                st.session_state.cmp_result_zip     = None
                 st.session_state.cmp_result_summary = None
-                st.session_state.cmp_result_log   = None
+                st.session_state.cmp_result_log     = None
+                st.session_state["cmp_page_cur"]    = 1
     else:
         st.info("⬆️ Upload both File A and File B to enable comparison.")
 
-    # ── 결과 ─────────────────────────────────────────
     if st.session_state.cmp_df is not None:
         df_full  = st.session_state.cmp_df
         n_total  = len(df_full)
@@ -1334,7 +1379,6 @@ else:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # 요약 배너
         if n_issues == 0:
             st.markdown(f"""
             <div class="diff-banner-ok">
@@ -1360,7 +1404,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-        # 메트릭 카드
         mc = st.columns(5)
         for col, (lbl, val, color) in zip(mc, [
             ("TOTAL TAGS",   n_total,  "#607d8b"),
@@ -1377,7 +1420,6 @@ else:
                 unsafe_allow_html=True,
             )
 
-        # 범례
         st.markdown("""
         <div style="display:flex;gap:20px;flex-wrap:wrap;
                     margin:12px 0 20px;font-size:12px;">
@@ -1388,7 +1430,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Filter & Search ───────────────────────────
+        # Filter & Search
         st.markdown("### 🔎 Filter & Search")
         fs1, fs2, fs3 = st.columns([3, 2, 1])
         with fs1:
@@ -1439,28 +1481,16 @@ else:
             "to edit its value in File B. Pixel Data (7FE0,0010) is protected."
         )
 
-        # 테이블 바로 위: Showing 정보 + 페이지 컨트롤
-        tbl_c1, tbl_c2, tbl_c3 = st.columns([4, 1, 1])
-        with tbl_c1:
-            st.markdown(
-                f'<div class="table-info-text" style="padding-top:6px;">'
-                f'Showing <b>{min(page_size, len(df_view))}</b> of '
-                f'<b>{len(df_view)}</b> filtered rows &nbsp;·&nbsp; total: {n_total}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with tbl_c2:
-            st.markdown(
-                '<div style="text-align:right;padding-top:6px;font-size:13px;'
-                'font-weight:600;">Page</div>',
-                unsafe_allow_html=True,
-            )
-        with tbl_c3:
-            page = st.number_input(
-                f"/ {total_pages}",
-                min_value=1, max_value=total_pages, value=1,
-                key="cmp_page", label_visibility="visible",
-            )
+        st.markdown(
+            f'<div class="table-info-text">'
+            f'Showing <b>{min(page_size, len(df_view))}</b> of '
+            f'<b>{len(df_view)}</b> filtered rows &nbsp;·&nbsp; total: {n_total}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ✅ 페이지 컨트롤 (테이블 바로 위)
+        page = page_control("cmp_page", total_pages)
 
         df_page = df_view.iloc[
             (page - 1) * page_size : page * page_size
@@ -1659,11 +1689,11 @@ else:
             ac1, ac2 = st.columns([1, 2])
             with ac1:
                 if st.button("🗑️ Clear All Staged", use_container_width=True):
-                    st.session_state.cmp_staged       = {}
-                    st.session_state.cmp_result_bytes = None
-                    st.session_state.cmp_result_zip   = None
+                    st.session_state.cmp_staged         = {}
+                    st.session_state.cmp_result_bytes   = None
+                    st.session_state.cmp_result_zip     = None
                     st.session_state.cmp_result_summary = None
-                    st.session_state.cmp_result_log   = None
+                    st.session_state.cmp_result_log     = None
                     st.rerun()
 
             with ac2:
@@ -1699,7 +1729,6 @@ else:
                         st.session_state.cmp_result_summary = None
                         st.session_state.cmp_result_log     = results
 
-            # 단일 DCM 다운로드
             if st.session_state.cmp_result_bytes:
                 b_base = Path(st.session_state.cmp_b_name).stem
                 st.markdown(
@@ -1716,7 +1745,6 @@ else:
                     use_container_width=True, type="primary",
                 )
 
-            # ZIP 다운로드
             if st.session_state.cmp_result_zip:
                 s = st.session_state.cmp_result_summary
                 st.markdown(
@@ -1753,7 +1781,6 @@ else:
                             height=300, hide_index=True,
                         )
 
-            # Change Log CSV
             if (
                 st.session_state.cmp_result_bytes
                 or st.session_state.cmp_result_zip
