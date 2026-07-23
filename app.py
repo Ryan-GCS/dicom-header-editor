@@ -6,6 +6,7 @@ import zipfile
 import re
 import warnings
 import base64
+import html as html_mod
 from copy import deepcopy
 from pathlib import Path
 
@@ -83,11 +84,6 @@ st.markdown("""
         background: rgba(76,175,80,0.1) !important;
         border: 1.5px solid rgba(76,175,80,0.3) !important;
         border-left: 4px solid #4caf50 !important;
-    }
-    .diff-banner-info {
-        background: rgba(0,150,255,0.1) !important;
-        border: 1.5px solid rgba(0,150,255,0.3) !important;
-        border-left: 4px solid #00aaff !important;
     }
     .file-header-a {
         background: linear-gradient(135deg,rgba(0,212,255,0.12),rgba(0,100,200,0.08)) !important;
@@ -174,7 +170,6 @@ st.markdown("""
     .metric-card {
         background: linear-gradient(135deg,#ffffff,#f5f8ff) !important;
         border: 1px solid #d0d8e8 !important;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
     }
     .metric-val { color: #1a2030 !important; }
     .metric-lbl { color: #5a6a7a !important; }
@@ -187,11 +182,6 @@ st.markdown("""
         background: rgba(76,175,80,0.08) !important;
         border: 1.5px solid rgba(76,175,80,0.3) !important;
         border-left: 4px solid #4caf50 !important;
-    }
-    .diff-banner-info {
-        background: rgba(0,100,255,0.06) !important;
-        border: 1.5px solid rgba(0,100,255,0.2) !important;
-        border-left: 4px solid #0066ff !important;
     }
     .file-header-a {
         background: linear-gradient(135deg,rgba(0,150,255,0.08),rgba(0,80,200,0.05)) !important;
@@ -326,7 +316,7 @@ st.markdown("""
 .file-header-a, .file-header-b {
     border-radius:10px; padding:10px 16px; margin-bottom:10px; font-weight:700; font-size:14px;
 }
-.diff-banner-warn, .diff-banner-ok, .diff-banner-info {
+.diff-banner-warn, .diff-banner-ok {
     border-radius:12px; padding:16px 20px; margin-bottom:20px;
 }
 .apply-hint { border-radius:8px; padding:12px 16px; font-size:13px; font-weight:500; }
@@ -342,8 +332,10 @@ st.markdown("""
 .page-total { font-size:14px; font-weight:500; }
 .manual-edit-box { border-radius:10px; padding:12px 16px; margin-bottom:12px; font-size:13px; }
 
-/* Value Card */
-.val-card { border-radius:10px; padding:12px 14px; margin-bottom:8px; }
+/* ✅ Value Card */
+.val-card {
+    border-radius:10px; padding:12px 14px; margin-bottom:8px;
+}
 .val-label {
     font-size:10px; font-weight:700; letter-spacing:1px;
     text-transform:uppercase; margin-bottom:6px;
@@ -352,7 +344,7 @@ st.markdown("""
     font-family:monospace; font-size:11px;
     padding:7px 9px; border-radius:6px;
     word-break:break-all; line-height:1.5;
-    max-height:72px; overflow-y:auto;
+    max-height:80px; overflow-y:auto;
     white-space:pre-wrap;
 }
 .val-status-row {
@@ -408,9 +400,9 @@ def page_control(key: str, total_pages: int) -> int:
     return st.session_state[cur_key]
 
 # ══════════════════════════════════════════════════════
-# VALUE CARD RENDERER  ✅ 각각 독립 호출용
+# ✅ VALUE CARD — HTML 문자열 반환 (st.markdown 호출 없음)
 # ══════════════════════════════════════════════════════
-def render_val_card(label: str, value: str, status: str, show_status: bool = False):
+def val_card_html(label: str, value: str, status: str, show_status: bool = False) -> str:
     status_icons = {
         "match":  ("✅ Identical", "val-status-match"),
         "diff":   ("⚠️ Different", "val-status-diff"),
@@ -419,20 +411,21 @@ def render_val_card(label: str, value: str, status: str, show_status: bool = Fal
     }
     icon_text, icon_cls = status_icons.get(status, ("", ""))
     display_val = value if value else "— (empty)"
-    # HTML 특수문자 이스케이프
-    import html as html_mod
-    safe_val = html_mod.escape(display_val[:300]) + ("..." if len(display_val) > 300 else "")
+    safe_val    = html_mod.escape(display_val[:300]) + ("..." if len(display_val) > 300 else "")
+    safe_label  = html_mod.escape(label)
     status_html = (
-        f'<div class="val-status-row"><span class="{icon_cls}">{icon_text}</span></div>'
+        f'<div class="val-status-row">'
+        f'<span class="{icon_cls}">{icon_text}</span>'
+        f'</div>'
         if show_status and icon_cls else ""
     )
-    st.markdown(f"""
-    <div class="val-card">
-        <div class="val-label">{label}</div>
-        <div class="val-content">{safe_val}</div>
-        {status_html}
-    </div>
-    """, unsafe_allow_html=True)
+    return (
+        f'<div class="val-card">'
+        f'<div class="val-label">{safe_label}</div>'
+        f'<div class="val-content">{safe_val}</div>'
+        f'{status_html}'
+        f'</div>'
+    )
 
 # ══════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
@@ -451,10 +444,8 @@ def extract_tags(ds) -> list:
     for elem in ds:
         try:
             tag_str = f"({elem.tag.group:04X},{elem.tag.element:04X})"
-            value = (
-                str(elem.value) if not isinstance(elem.value, bytes)
-                else f"[Binary {len(elem.value)} bytes]"
-            )
+            value   = (str(elem.value) if not isinstance(elem.value, bytes)
+                       else f"[Binary {len(elem.value)} bytes]")
             rows.append({
                 "Tag":     tag_str,
                 "Keyword": elem.keyword if not elem.tag.is_private else "Private Tag",
@@ -498,7 +489,6 @@ def apply_modifications_to_ds(ds, modifications: dict):
             })
     output = io.BytesIO()
     try:
-        # ✅ 원본 Transfer Syntax / VR / Endian 완전 보존
         ds_copy.save_as(output, write_like_original=True)
     except Exception:
         try:
@@ -514,13 +504,11 @@ def apply_modifications_to_ds(ds, modifications: dict):
 def process_zip(zip_bytes: bytes, modifications: dict):
     input_zip  = zipfile.ZipFile(io.BytesIO(zip_bytes))
     output_buf = io.BytesIO()
-    # ✅ ZIP_STORED: DICOM 바이너리 압축 없이 저장 (서버 파싱 안전)
     output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_STORED)
     all_results = []
     success_count = skip_count = error_count = 0
     file_list = [f for f in input_zip.namelist() if not f.endswith("/")]
     skip_exts = {".jpg",".jpeg",".png",".gif",".bmp",".txt",".xml",".json",".pdf",".zip"}
-
     for filename in file_list:
         file_bytes = input_zip.read(filename)
         ext = Path(filename).suffix.lower()
@@ -548,11 +536,9 @@ def process_zip(zip_bytes: bytes, modifications: dict):
 
 def apply_staged_to_zip(zip_bytes: bytes, modifications: dict):
     output_buf = io.BytesIO()
-    # ✅ ZIP_STORED: DICOM 바이너리 압축 없이 저장
     output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_STORED)
     all_results = []
     success_count = skip_count = error_count = 0
-
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as input_zip:
         for filename in input_zip.namelist():
             if filename.endswith("/"):
@@ -623,20 +609,22 @@ def compare_dicom(ds_a, ds_b) -> pd.DataFrame:
                 d[tag_str] = {"Keyword": kw, "VR": vr, "Value": val}
             except: continue
         return d
-    dict_a = ds_to_dict(ds_a)
-    dict_b = ds_to_dict(ds_b)
+    dict_a   = ds_to_dict(ds_a)
+    dict_b   = ds_to_dict(ds_b)
     all_tags = sorted(set(dict_a) | set(dict_b))
     rows = []
     for tag in all_tags:
         in_a, in_b = tag in dict_a, tag in dict_b
         if in_a and in_b:
             kw, vr = dict_a[tag]["Keyword"], dict_a[tag]["VR"]
-            va, vb = dict_a[tag]["Value"], dict_b[tag]["Value"]
+            va, vb = dict_a[tag]["Value"],   dict_b[tag]["Value"]
             status = "match" if va == vb else "diff"
         elif in_a:
-            kw, vr, va, vb, status = dict_a[tag]["Keyword"], dict_a[tag]["VR"], dict_a[tag]["Value"], "", "only_a"
+            kw, vr, va, vb, status = (dict_a[tag]["Keyword"], dict_a[tag]["VR"],
+                                       dict_a[tag]["Value"], "", "only_a")
         else:
-            kw, vr, va, vb, status = dict_b[tag]["Keyword"], dict_b[tag]["VR"], "", dict_b[tag]["Value"], "only_b"
+            kw, vr, va, vb, status = (dict_b[tag]["Keyword"], dict_b[tag]["VR"],
+                                       "", dict_b[tag]["Value"], "only_b")
         rows.append({"Tag": tag, "Keyword": kw, "VR": vr,
                      "Value A": va, "Value B": vb, "Status": status})
     return pd.DataFrame(rows)
@@ -874,7 +862,7 @@ if st.session_state.app_mode == "editor":
         if show_private == "Standard Only": df = df[df["Private"] == False]
         elif show_private == "Private Only": df = df[df["Private"] == True]
         if search:
-            esc = re.escape(search)
+            esc  = re.escape(search)
             mask = (df["Keyword"].str.contains(esc, case=False, na=False, regex=True)
                     | df["Tag"].str.contains(esc, case=False, na=False, regex=True)
                     | df["Value"].str.contains(esc, case=False, na=False, regex=True))
@@ -1031,8 +1019,7 @@ if st.session_state.app_mode == "editor":
                     mc2.metric("✅ Processed", s["success"])
                     mc3.metric("⏭️ Skipped",   s["skipped"])
                     mc4.metric("❌ Errors",    s["errors"])
-                    if s["success"] == 0:
-                        st.error("❌ No DICOM files were processed!")
+                    if s["success"] == 0: st.error("❌ No DICOM files were processed!")
                 if st.session_state.mod_results:
                     with st.expander("📊 Modification Report", expanded=False):
                         st.dataframe(pd.DataFrame(st.session_state.mod_results),
@@ -1065,12 +1052,9 @@ else:
     </div>""", unsafe_allow_html=True)
 
     col_a, col_b = st.columns(2)
-
     with col_a:
-        st.markdown(
-            '<div class="file-header-a">📄 &nbsp;'
-            '<b style="color:#00d4ff;">File A</b> &nbsp; Reference / Source</div>',
-            unsafe_allow_html=True)
+        st.markdown('<div class="file-header-a">📄 &nbsp;<b style="color:#00d4ff;">File A</b>'
+                    ' &nbsp; Reference / Source</div>', unsafe_allow_html=True)
         st.caption("Upload File A (.dcm or .zip)")
         up_a = st.file_uploader("Upload File A", type=["dcm","DCM","zip"],
                                 key="cmp_up_a", label_visibility="collapsed")
@@ -1118,10 +1102,8 @@ else:
             st.success(f"✅ A: **{st.session_state.cmp_a_name}**")
 
     with col_b:
-        st.markdown(
-            '<div class="file-header-b">📄 &nbsp;'
-            '<b style="color:#9c27b0;">File B</b> &nbsp; Target / Modified</div>',
-            unsafe_allow_html=True)
+        st.markdown('<div class="file-header-b">📄 &nbsp;<b style="color:#9c27b0;">File B</b>'
+                    ' &nbsp; Target / Modified</div>', unsafe_allow_html=True)
         st.caption("Upload File B (.dcm or .zip)")
         up_b = st.file_uploader("Upload File B", type=["dcm","DCM","zip"],
                                 key="cmp_up_b", label_visibility="collapsed")
@@ -1231,10 +1213,10 @@ else:
 
         st.markdown("""<div style="display:flex;gap:20px;flex-wrap:wrap;
             margin:12px 0 20px;font-size:12px;">
-            <span>✅ <b>Identical</b> — same value</span>
-            <span>⚠️ <b>Different</b> — value differs</span>
-            <span>🔵 <b>Only in A</b> — not in B</span>
-            <span>🟣 <b>Only in B</b> — not in A</span>
+            <span>✅ <b>Identical</b></span>
+            <span>⚠️ <b>Different</b></span>
+            <span>🔵 <b>Only in A</b></span>
+            <span>🟣 <b>Only in B</b></span>
         </div>""", unsafe_allow_html=True)
 
         STATUS_COLORS = {
@@ -1290,7 +1272,7 @@ else:
         page    = page_control("cmp_page", total_pages)
         df_page = df_view.iloc[(page-1)*page_size : page*page_size].copy()
 
-        df_display        = df_page[["Tag","Keyword","VR","Value A","Value B","Status"]].copy()
+        df_display         = df_page[["Tag","Keyword","VR","Value A","Value B","Status"]].copy()
         df_display["Diff"] = df_display["Status"].map(STATUS_ICONS)
 
         def color_rows(row):
@@ -1336,10 +1318,13 @@ else:
                 with st.expander(label, expanded=False):
                     e1, e2 = st.columns([3, 2])
                     with e1:
-                        # ✅ 각각 독립 호출
-                        render_val_card("🔵 VALUE A — REFERENCE", row["Value A"], status)
-                        render_val_card("🟣 VALUE B — CURRENT",   row["Value B"], status,
-                                        show_status=True)
+                        # ✅ 두 카드를 합쳐서 한 번에 렌더링
+                        st.markdown(
+                            val_card_html("🔵 VALUE A — REFERENCE", row["Value A"], status)
+                            + val_card_html("🟣 VALUE B — CURRENT", row["Value B"], status,
+                                            show_status=True),
+                            unsafe_allow_html=True
+                        )
                     with e2:
                         st.markdown("**New value for B**")
                         current_staged = st.session_state.cmp_staged.get(tag, row["Value B"])
@@ -1366,12 +1351,11 @@ else:
             '🔍 &nbsp;Search <b>any tag</b> (including identical ones) '
             'and edit its value in File B. '
             'Staged changes are applied together with Inline Edits on download.'
-            '</div>',
-            unsafe_allow_html=True)
+            '</div>', unsafe_allow_html=True)
 
         manual_search = st.text_input(
             "🔍 Search tag",
-            placeholder="e.g. SeriesDescription, 0008,103E, Siemens",
+            placeholder="e.g. SeriesDescription, 0008,103E",
             key="manual_search", label_visibility="collapsed")
 
         all_tags_df = df_full[~df_full["Tag"].isin(PROTECTED_TAGS)].copy()
@@ -1401,10 +1385,13 @@ else:
                 with st.expander(label, expanded=True):
                     m1, m2 = st.columns([3, 2])
                     with m1:
-                        # ✅ 각각 독립 호출
-                        render_val_card("🔵 VALUE A — REFERENCE", row["Value A"], status)
-                        render_val_card("🟣 VALUE B — CURRENT",   row["Value B"], status,
-                                        show_status=True)
+                        # ✅ 두 카드를 합쳐서 한 번에 렌더링
+                        st.markdown(
+                            val_card_html("🔵 VALUE A — REFERENCE", row["Value A"], status)
+                            + val_card_html("🟣 VALUE B — CURRENT", row["Value B"], status,
+                                            show_status=True),
+                            unsafe_allow_html=True
+                        )
                     with m2:
                         st.markdown("**New value for B**")
                         cur_manual = st.session_state.cmp_manual_staged.get(tag, row["Value B"])
@@ -1458,9 +1445,8 @@ else:
 
         if not merged_staged:
             st.markdown(
-                '<div class="apply-hint">'
-                '💡 Stage at least one edit above to enable download.'
-                '</div>', unsafe_allow_html=True)
+                '<div class="apply-hint">💡 Stage at least one edit above to enable download.</div>',
+                unsafe_allow_html=True)
         else:
             staged_rows = []
             for tag, val in merged_staged.items():
@@ -1494,8 +1480,7 @@ else:
                 st.markdown(f"""<div class="dl-target-box">
                     <div class="dl-target-title">📦 Download Target — Full ZIP</div>
                     <div class="dl-target-desc">
-                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files in ZIP B
-                        (no compression — DICOM safe)<br>
+                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files (no compression)<br>
                         <b>Source ZIP:</b> {st.session_state.cmp_b_name}<br>
                         <b>Changes:</b> {n_staged} tag(s) applied to every DICOM<br>
                         <b>Output:</b> {zip_out_name}
@@ -1528,7 +1513,7 @@ else:
                                if is_zip_mode else "🚀 Apply & Download Single DCM")
                 if st.button(btn_label, type="primary", use_container_width=True):
                     if is_zip_mode:
-                        with st.spinner(f"Applying {n_staged} change(s) to all files in ZIP B..."):
+                        with st.spinner(f"Applying {n_staged} change(s) to all files..."):
                             rb, results, summary = apply_staged_to_zip(
                                 st.session_state.cmp_b_zip_bytes, merged_staged)
                         st.session_state.cmp_result_zip     = rb
@@ -1546,9 +1531,8 @@ else:
 
             if st.session_state.cmp_result_bytes:
                 b_base = Path(st.session_state.cmp_b_name).stem
-                st.markdown(
-                    '<div class="success-banner">✅ Modified File B ready for download!</div>',
-                    unsafe_allow_html=True)
+                st.markdown('<div class="success-banner">✅ Modified File B ready for download!</div>',
+                            unsafe_allow_html=True)
                 st.download_button(
                     label="⬇️ Download Modified File B (.dcm)",
                     data=st.session_state.cmp_result_bytes,
@@ -1626,8 +1610,7 @@ with st.sidebar:
     </div>""", unsafe_allow_html=True)
 
     st.divider()
-    st.markdown('<div class="sidebar-section-title">📖 How to Use</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">📖 How to Use</div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="mode-label">Validation Mode</div>
     <div class="how-step"><div class="how-step-num">1</div>
@@ -1650,8 +1633,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown('<div class="sidebar-section-title">⚠️ Notes</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">⚠️ Notes</div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="note-item"><span class="note-icon">🔒</span>
         <span>Original files are <b>never modified</b></span></div>
@@ -1660,14 +1642,13 @@ with st.sidebar:
     <div class="note-item"><span class="note-icon">💾</span>
         <span>Transfer Syntax &amp; Meta Header <b>fully preserved</b></span></div>
     <div class="note-item"><span class="note-icon">📦</span>
-        <span>ZIP saved without compression <b>(DICOM safe)</b></span></div>
+        <span>ZIP saved <b>without compression</b> (DICOM safe)</span></div>
     <div class="note-item"><span class="note-icon">🚫</span>
         <span>Do <b>not</b> upload real patient data (PHI)</span></div>
     """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown('<div class="sidebar-section-title">🔧 Common Tags</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">🔧 Common Tags</div>', unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["Standard", "AIRS Upload", "AIRS Recon"])
 
     with tab1:
