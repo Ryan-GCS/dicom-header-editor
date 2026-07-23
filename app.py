@@ -331,7 +331,7 @@ st.markdown("""
 }
 .apply-hint { border-radius:8px; padding:12px 16px; font-size:13px; font-weight:500; }
 .dl-target-box { border-radius:14px; padding:20px 24px; margin:16px 0; }
-.dl-target-title { font-size:18px; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+.dl-target-title { font-size:18px; font-weight:800; margin-bottom:6px; }
 .dl-target-desc  { font-size:13px; line-height:1.6; margin-top:8px; }
 .table-info-text { font-size:13px; margin-bottom:6px; }
 .page-ctrl-box {
@@ -343,22 +343,21 @@ st.markdown("""
 .manual-edit-box { border-radius:10px; padding:12px 16px; margin-bottom:12px; font-size:13px; }
 
 /* Value Card */
-.val-card {
-    border-radius:10px; padding:14px 16px; margin-bottom:8px;
-}
+.val-card { border-radius:10px; padding:12px 14px; margin-bottom:8px; }
 .val-label {
-    font-size:11px; font-weight:700; letter-spacing:1px;
+    font-size:10px; font-weight:700; letter-spacing:1px;
     text-transform:uppercase; margin-bottom:6px;
 }
 .val-content {
-    font-family:monospace; font-size:12px;
-    padding:8px 10px; border-radius:6px;
+    font-family:monospace; font-size:11px;
+    padding:7px 9px; border-radius:6px;
     word-break:break-all; line-height:1.5;
-    max-height:80px; overflow-y:auto;
+    max-height:72px; overflow-y:auto;
+    white-space:pre-wrap;
 }
 .val-status-row {
     display:flex; align-items:center; gap:6px;
-    margin-top:8px; font-size:12px; font-weight:600;
+    margin-top:6px; font-size:11px; font-weight:600;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -378,7 +377,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
-# PAGE CONTROL WIDGET
+# PAGE CONTROL
 # ══════════════════════════════════════════════════════
 def page_control(key: str, total_pages: int) -> int:
     cur_key = f"{key}_cur"
@@ -409,10 +408,9 @@ def page_control(key: str, total_pages: int) -> int:
     return st.session_state[cur_key]
 
 # ══════════════════════════════════════════════════════
-# VALUE CARD RENDERER
+# VALUE CARD RENDERER  ✅ 각각 독립 호출용
 # ══════════════════════════════════════════════════════
-def render_val_card(label: str, value: str, status: str):
-    """태그 값을 깔끔한 카드로 렌더링 (긴 값은 스크롤)"""
+def render_val_card(label: str, value: str, status: str, show_status: bool = False):
     status_icons = {
         "match":  ("✅ Identical", "val-status-match"),
         "diff":   ("⚠️ Different", "val-status-diff"),
@@ -421,15 +419,20 @@ def render_val_card(label: str, value: str, status: str):
     }
     icon_text, icon_cls = status_icons.get(status, ("", ""))
     display_val = value if value else "— (empty)"
-    # 값이 너무 길면 앞 200자만 표시
-    truncated = display_val[:300] + ("..." if len(display_val) > 300 else "")
-    return f"""
+    # HTML 특수문자 이스케이프
+    import html as html_mod
+    safe_val = html_mod.escape(display_val[:300]) + ("..." if len(display_val) > 300 else "")
+    status_html = (
+        f'<div class="val-status-row"><span class="{icon_cls}">{icon_text}</span></div>'
+        if show_status and icon_cls else ""
+    )
+    st.markdown(f"""
     <div class="val-card">
         <div class="val-label">{label}</div>
-        <div class="val-content">{truncated}</div>
-        {f'<div class="val-status-row"><span class="{icon_cls}">{icon_text}</span></div>' if icon_cls else ''}
+        <div class="val-content">{safe_val}</div>
+        {status_html}
     </div>
-    """
+    """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
@@ -495,6 +498,7 @@ def apply_modifications_to_ds(ds, modifications: dict):
             })
     output = io.BytesIO()
     try:
+        # ✅ 원본 Transfer Syntax / VR / Endian 완전 보존
         ds_copy.save_as(output, write_like_original=True)
     except Exception:
         try:
@@ -510,11 +514,13 @@ def apply_modifications_to_ds(ds, modifications: dict):
 def process_zip(zip_bytes: bytes, modifications: dict):
     input_zip  = zipfile.ZipFile(io.BytesIO(zip_bytes))
     output_buf = io.BytesIO()
-    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
+    # ✅ ZIP_STORED: DICOM 바이너리 압축 없이 저장 (서버 파싱 안전)
+    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_STORED)
     all_results = []
     success_count = skip_count = error_count = 0
     file_list = [f for f in input_zip.namelist() if not f.endswith("/")]
     skip_exts = {".jpg",".jpeg",".png",".gif",".bmp",".txt",".xml",".json",".pdf",".zip"}
+
     for filename in file_list:
         file_bytes = input_zip.read(filename)
         ext = Path(filename).suffix.lower()
@@ -542,9 +548,11 @@ def process_zip(zip_bytes: bytes, modifications: dict):
 
 def apply_staged_to_zip(zip_bytes: bytes, modifications: dict):
     output_buf = io.BytesIO()
-    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_DEFLATED)
+    # ✅ ZIP_STORED: DICOM 바이너리 압축 없이 저장
+    output_zip = zipfile.ZipFile(output_buf, "w", zipfile.ZIP_STORED)
     all_results = []
     success_count = skip_count = error_count = 0
+
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as input_zip:
         for filename in input_zip.namelist():
             if filename.endswith("/"):
@@ -610,7 +618,8 @@ def compare_dicom(ds_a, ds_b) -> pd.DataFrame:
                 tag_str = f"({elem.tag.group:04X},{elem.tag.element:04X})"
                 kw  = elem.keyword if not elem.tag.is_private else "Private Tag"
                 vr  = str(elem.VR)
-                val = str(elem.value) if not isinstance(elem.value, bytes) else f"[Binary {len(elem.value)} bytes]"
+                val = (str(elem.value) if not isinstance(elem.value, bytes)
+                       else f"[Binary {len(elem.value)} bytes]")
                 d[tag_str] = {"Keyword": kw, "VR": vr, "Value": val}
             except: continue
         return d
@@ -621,7 +630,8 @@ def compare_dicom(ds_a, ds_b) -> pd.DataFrame:
     for tag in all_tags:
         in_a, in_b = tag in dict_a, tag in dict_b
         if in_a and in_b:
-            kw, vr, va, vb = dict_a[tag]["Keyword"], dict_a[tag]["VR"], dict_a[tag]["Value"], dict_b[tag]["Value"]
+            kw, vr = dict_a[tag]["Keyword"], dict_a[tag]["VR"]
+            va, vb = dict_a[tag]["Value"], dict_b[tag]["Value"]
             status = "match" if va == vb else "diff"
         elif in_a:
             kw, vr, va, vb, status = dict_a[tag]["Keyword"], dict_a[tag]["VR"], dict_a[tag]["Value"], "", "only_a"
@@ -640,9 +650,12 @@ def make_excel_diff(df: pd.DataFrame) -> bytes:
         "match":  PatternFill("solid", fgColor="F1F8E9"),
     }
     ws.append(["Tag","Keyword","VR","Value A","Value B","Status"])
-    for cell in ws[1]: cell.font = Font(bold=True); cell.fill = PatternFill("solid", fgColor="CFD8DC")
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="CFD8DC")
     for _, row in df.iterrows():
-        ws.append([row["Tag"], row["Keyword"], row["VR"], row["Value A"], row["Value B"], row["Status"]])
+        ws.append([row["Tag"], row["Keyword"], row["VR"],
+                   row["Value A"], row["Value B"], row["Status"]])
         fill = fill_map.get(row["Status"], PatternFill())
         for cell in ws[ws.max_row]: cell.fill = fill
     for col in ws.columns:
@@ -740,7 +753,8 @@ if st.session_state.app_mode == "editor":
         <div>
           <p class="step-title" style="margin-bottom:4px;">Validation Mode — Single / Batch DICOM Tag Editor</p>
           <p style="margin:0;font-size:13px;color:#8892a4;">
-            Upload a single .dcm or a .zip archive &nbsp;·&nbsp; Search &amp; edit tags &nbsp;·&nbsp; Download modified file
+            Upload a single .dcm or a .zip archive &nbsp;·&nbsp;
+            Search &amp; edit tags &nbsp;·&nbsp; Download modified file
           </p>
         </div>
       </div>
@@ -813,11 +827,13 @@ if st.session_state.app_mode == "editor":
                     <div style="font-size:16px;font-weight:800;margin-bottom:4px;">✅ ZIP Loaded Successfully</div>
                     <div style="font-size:13px;color:#8892a4;">
                         <b>{st.session_state.filename}</b>
-                        &nbsp;·&nbsp; {len(file_list)} files &nbsp;·&nbsp; {len(st.session_state.tags_df)} tags
+                        &nbsp;·&nbsp; {len(file_list)} files
+                        &nbsp;·&nbsp; {len(st.session_state.tags_df)} tags
                     </div>
                 </div>""", unsafe_allow_html=True)
                 with st.expander(f"📂 View {len(file_list)} files in ZIP", expanded=False):
-                    st.dataframe(pd.DataFrame({"File": file_list}), hide_index=True, use_container_width=True)
+                    st.dataframe(pd.DataFrame({"File": file_list}),
+                                 hide_index=True, use_container_width=True)
 
     if st.session_state.ds is not None:
         st.markdown("""<div class="step-card"><div class="step-header">
@@ -831,12 +847,15 @@ if st.session_state.app_mode == "editor":
 
         mc = st.columns(3)
         for col, (lbl, val, color) in zip(mc, [
-            ("TOTAL TAGS", n_total, "#607d8b"),
-            ("STANDARD",   n_std,   "#2196f3"),
+            ("TOTAL TAGS",   n_total,   "#607d8b"),
+            ("STANDARD",     n_std,     "#2196f3"),
             ("PRIVATE TAGS", n_private, "#9c27b0"),
         ]):
-            col.markdown(f'<div class="metric-card"><div class="metric-val" style="color:{color};">{val}</div>'
-                         f'<div class="metric-lbl">{lbl}</div></div>', unsafe_allow_html=True)
+            col.markdown(
+                f'<div class="metric-card">'
+                f'<div class="metric-val" style="color:{color};">{val}</div>'
+                f'<div class="metric-lbl">{lbl}</div></div>',
+                unsafe_allow_html=True)
 
         st.markdown("### 🔎 Filter & Search")
         fs1, fs2, fs3 = st.columns([3, 2, 1])
@@ -844,7 +863,8 @@ if st.session_state.app_mode == "editor":
             search = st.text_input("Search", placeholder="e.g. PatientName, 0010,0010",
                                    key="editor_search", label_visibility="collapsed")
         with fs2:
-            show_private = st.selectbox("Tag type", ["All Tags","Standard Only","Private Only"],
+            show_private = st.selectbox("Tag type",
+                                        ["All Tags","Standard Only","Private Only"],
                                         key="editor_tag_type", label_visibility="collapsed")
         with fs3:
             ed_page_size = st.selectbox("Rows", [25,50,100,200],
@@ -862,9 +882,11 @@ if st.session_state.app_mode == "editor":
 
         ed_total_pages = max(1, (len(df) - 1) // ed_page_size + 1)
         st.markdown("### 🗂️ Tag Table")
-        st.markdown(f'<div class="table-info-text">Showing <b>{min(ed_page_size, len(df))}</b> of '
-                    f'<b>{len(df)}</b> tags &nbsp;·&nbsp; total: {n_total}</div>', unsafe_allow_html=True)
-        ed_page = page_control("editor_page", ed_total_pages)
+        st.markdown(
+            f'<div class="table-info-text">Showing <b>{min(ed_page_size, len(df))}</b> of '
+            f'<b>{len(df)}</b> tags &nbsp;·&nbsp; total: {n_total}</div>',
+            unsafe_allow_html=True)
+        ed_page    = page_control("editor_page", ed_total_pages)
         df_page_ed = df.iloc[(ed_page-1)*ed_page_size : ed_page*ed_page_size].copy()
 
         def highlight_modified_editor(row):
@@ -872,8 +894,9 @@ if st.session_state.app_mode == "editor":
                 return ["background-color:rgba(0,212,255,0.15)"] * len(row)
             return [""] * len(row)
 
-        st.dataframe(df_page_ed.drop(columns=["Private"]).style.apply(highlight_modified_editor, axis=1),
-                     use_container_width=True, height=420, hide_index=True)
+        st.dataframe(
+            df_page_ed.drop(columns=["Private"]).style.apply(highlight_modified_editor, axis=1),
+            use_container_width=True, height=420, hide_index=True)
 
         st.markdown("""<div class="step-card"><div class="step-header">
             <div class="step-number">3</div><p class="step-title">Edit Tags</p>
@@ -882,21 +905,24 @@ if st.session_state.app_mode == "editor":
 
         col_a, col_b = st.columns([2, 3])
         with col_a:
-            tag_options = [f"{row['Tag']}  {row['Keyword']}" for _, row in df.iterrows()]
+            tag_options     = [f"{row['Tag']}  {row['Keyword']}" for _, row in df.iterrows()]
             selected_option = st.selectbox("Select tag to edit", tag_options, key="tag_select")
-            selected_tag = selected_option.split("  ")[0] if selected_option else None
+            selected_tag    = selected_option.split("  ")[0] if selected_option else None
         with col_b:
             if selected_tag:
-                cur = df[df["Tag"] == selected_tag]["Value"].values
-                default_val = st.session_state.modifications.get(selected_tag, cur[0] if len(cur) else "")
+                cur         = df[df["Tag"] == selected_tag]["Value"].values
+                default_val = st.session_state.modifications.get(
+                    selected_tag, cur[0] if len(cur) else "")
             else:
                 default_val = ""
             new_value = st.text_input("New value", value=default_val)
 
         if st.button("📝 Queue Change", use_container_width=True, key="queue_btn"):
             val = new_value.strip()
-            if not selected_tag: st.session_state.queue_msg = ("error", "Please select a tag.")
-            elif not val: st.session_state.queue_msg = ("error", "Please enter a new value.")
+            if not selected_tag:
+                st.session_state.queue_msg = ("error", "Please select a tag.")
+            elif not val:
+                st.session_state.queue_msg = ("error", "Please enter a new value.")
             else:
                 st.session_state.modifications[selected_tag] = val
                 st.session_state.modified_bytes = None
@@ -915,8 +941,12 @@ if st.session_state.app_mode == "editor":
             for tag, val in st.session_state.modifications.items():
                 kw  = atdf[atdf["Tag"] == tag]["Keyword"].values
                 ori = atdf[atdf["Tag"] == tag]["Value"].values
-                mod_rows.append({"Tag": tag, "Keyword": kw[0] if len(kw) else "Unknown",
-                                  "Original": ori[0] if len(ori) else "-", "New Value": val})
+                mod_rows.append({
+                    "Tag": tag,
+                    "Keyword":  kw[0]  if len(kw)  else "Unknown",
+                    "Original": ori[0] if len(ori) else "-",
+                    "New Value": val,
+                })
             st.dataframe(pd.DataFrame(mod_rows), use_container_width=True, hide_index=True)
             c1, c2 = st.columns([2, 3])
             with c1:
@@ -943,8 +973,9 @@ if st.session_state.app_mode == "editor":
         </div></div>""", unsafe_allow_html=True)
 
         if not st.session_state.modifications:
-            st.markdown('<div class="apply-hint">💡 Queue at least one tag change above to enable download.</div>',
-                        unsafe_allow_html=True)
+            st.markdown(
+                '<div class="apply-hint">💡 Queue at least one tag change above to enable download.</div>',
+                unsafe_allow_html=True)
         else:
             n_mods = len(st.session_state.modifications)
             if st.session_state.upload_mode == "single":
@@ -958,18 +989,22 @@ if st.session_state.app_mode == "editor":
                     </div></div>""", unsafe_allow_html=True)
                 if st.button("🚀 Apply Changes", type="primary", use_container_width=True):
                     with st.spinner("Processing..."):
-                        mb, results = apply_modifications_to_ds(st.session_state.ds, st.session_state.modifications)
+                        mb, results = apply_modifications_to_ds(
+                            st.session_state.ds, st.session_state.modifications)
                     st.session_state.modified_bytes = mb
                     st.session_state.mod_results    = results
                 if st.session_state.mod_results:
-                    st.dataframe(pd.DataFrame(st.session_state.mod_results), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(st.session_state.mod_results),
+                                 use_container_width=True, hide_index=True)
                 if st.session_state.modified_bytes:
-                    st.markdown('<div class="success-banner">✅ File ready for download!</div>', unsafe_allow_html=True)
-                    st.download_button(label="⬇️ Download Modified DICOM",
-                                       data=st.session_state.modified_bytes,
-                                       file_name=f"modified_{st.session_state.filename}",
-                                       mime="application/octet-stream",
-                                       use_container_width=True, type="primary")
+                    st.markdown('<div class="success-banner">✅ File ready for download!</div>',
+                                unsafe_allow_html=True)
+                    st.download_button(
+                        label="⬇️ Download Modified DICOM",
+                        data=st.session_state.modified_bytes,
+                        file_name=f"modified_{st.session_state.filename}",
+                        mime="application/octet-stream",
+                        use_container_width=True, type="primary")
             elif st.session_state.upload_mode == "zip":
                 with zipfile.ZipFile(io.BytesIO(st.session_state.zip_bytes)) as zf:
                     n_files = len([f for f in zf.namelist() if not f.endswith("/")])
@@ -977,33 +1012,39 @@ if st.session_state.app_mode == "editor":
                 st.markdown(f"""<div class="dl-target-box">
                     <div class="dl-target-title">📦 Download Target</div>
                     <div class="dl-target-desc">
-                        <b>Mode:</b> Batch ZIP<br>
+                        <b>Mode:</b> Batch ZIP (no compression — DICOM safe)<br>
                         <b>File:</b> {st.session_state.filename} &nbsp;·&nbsp; {n_files} files<br>
                         <b>Changes:</b> {n_mods} tag(s) applied to every DICOM<br>
                         <b>Output:</b> {zip_out}
                     </div></div>""", unsafe_allow_html=True)
                 if st.button("🚀 Apply to All & Create ZIP", type="primary", use_container_width=True):
                     with st.spinner("Processing ZIP..."):
-                        rb, all_results, summary = process_zip(st.session_state.zip_bytes, st.session_state.modifications)
+                        rb, all_results, summary = process_zip(
+                            st.session_state.zip_bytes, st.session_state.modifications)
                     st.session_state.modified_bytes = rb
                     st.session_state.mod_results    = all_results
                     st.session_state.summary        = summary
                 if st.session_state.summary is not None:
                     s = st.session_state.summary
                     mc1, mc2, mc3, mc4 = st.columns(4)
-                    mc1.metric("📁 Total", s["total"]); mc2.metric("✅ Processed", s["success"])
-                    mc3.metric("⏭️ Skipped", s["skipped"]); mc4.metric("❌ Errors", s["errors"])
-                    if s["success"] == 0: st.error("❌ No DICOM files were processed!")
+                    mc1.metric("📁 Total",     s["total"])
+                    mc2.metric("✅ Processed", s["success"])
+                    mc3.metric("⏭️ Skipped",   s["skipped"])
+                    mc4.metric("❌ Errors",    s["errors"])
+                    if s["success"] == 0:
+                        st.error("❌ No DICOM files were processed!")
                 if st.session_state.mod_results:
                     with st.expander("📊 Modification Report", expanded=False):
                         st.dataframe(pd.DataFrame(st.session_state.mod_results),
                                      use_container_width=True, height=400, hide_index=True)
                 if st.session_state.modified_bytes is not None:
-                    st.markdown('<div class="success-banner">✅ ZIP ready for download!</div>', unsafe_allow_html=True)
-                    st.download_button(label="⬇️ Download Modified ZIP",
-                                       data=st.session_state.modified_bytes,
-                                       file_name=zip_out, mime="application/zip",
-                                       use_container_width=True, type="primary")
+                    st.markdown('<div class="success-banner">✅ ZIP ready for download!</div>',
+                                unsafe_allow_html=True)
+                    st.download_button(
+                        label="⬇️ Download Modified ZIP",
+                        data=st.session_state.modified_bytes,
+                        file_name=zip_out, mime="application/zip",
+                        use_container_width=True, type="primary")
 
 # ══════════════════════════════════════════════════════
 # ██████████  COMPARE MODE  ██████████
@@ -1026,8 +1067,10 @@ else:
     col_a, col_b = st.columns(2)
 
     with col_a:
-        st.markdown('<div class="file-header-a">📄 &nbsp;<b style="color:#00d4ff;">File A</b> &nbsp; Reference / Source</div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="file-header-a">📄 &nbsp;'
+            '<b style="color:#00d4ff;">File A</b> &nbsp; Reference / Source</div>',
+            unsafe_allow_html=True)
         st.caption("Upload File A (.dcm or .zip)")
         up_a = st.file_uploader("Upload File A", type=["dcm","DCM","zip"],
                                 key="cmp_up_a", label_visibility="collapsed")
@@ -1059,13 +1102,14 @@ else:
                     st.session_state["cmp_page_cur"]   = 1
         if st.session_state.cmp_a_zip_list:
             st.success(f"✅ File A ZIP: {len(st.session_state.cmp_a_zip_list)} DICOM files found")
-            name_map_a = {Path(p).name: p for p in st.session_state.cmp_a_zip_list}
+            name_map_a    = {Path(p).name: p for p in st.session_state.cmp_a_zip_list}
             sel_a_display = st.selectbox("📄 Select DICOM from File A ZIP",
                                          list(name_map_a.keys()), key="cmp_a_sel_box")
             sel_a = name_map_a[sel_a_display]
             if sel_a != st.session_state.cmp_a_sel:
                 st.session_state.cmp_a_sel         = sel_a
-                st.session_state.cmp_a_bytes       = read_dcm_from_zip(st.session_state.cmp_a_zip_bytes, sel_a)
+                st.session_state.cmp_a_bytes       = read_dcm_from_zip(
+                    st.session_state.cmp_a_zip_bytes, sel_a)
                 st.session_state.cmp_df            = None
                 st.session_state.cmp_staged        = {}
                 st.session_state.cmp_manual_staged = {}
@@ -1074,8 +1118,10 @@ else:
             st.success(f"✅ A: **{st.session_state.cmp_a_name}**")
 
     with col_b:
-        st.markdown('<div class="file-header-b">📄 &nbsp;<b style="color:#9c27b0;">File B</b> &nbsp; Target / Modified</div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="file-header-b">📄 &nbsp;'
+            '<b style="color:#9c27b0;">File B</b> &nbsp; Target / Modified</div>',
+            unsafe_allow_html=True)
         st.caption("Upload File B (.dcm or .zip)")
         up_b = st.file_uploader("Upload File B", type=["dcm","DCM","zip"],
                                 key="cmp_up_b", label_visibility="collapsed")
@@ -1107,13 +1153,14 @@ else:
                     st.session_state["cmp_page_cur"]   = 1
         if st.session_state.cmp_b_zip_list:
             st.success(f"✅ File B ZIP: {len(st.session_state.cmp_b_zip_list)} DICOM files found")
-            name_map_b = {Path(p).name: p for p in st.session_state.cmp_b_zip_list}
+            name_map_b    = {Path(p).name: p for p in st.session_state.cmp_b_zip_list}
             sel_b_display = st.selectbox("📄 Select DICOM from File B ZIP",
                                          list(name_map_b.keys()), key="cmp_b_sel_box")
             sel_b = name_map_b[sel_b_display]
             if sel_b != st.session_state.cmp_b_sel:
                 st.session_state.cmp_b_sel         = sel_b
-                st.session_state.cmp_b_bytes       = read_dcm_from_zip(st.session_state.cmp_b_zip_bytes, sel_b)
+                st.session_state.cmp_b_bytes       = read_dcm_from_zip(
+                    st.session_state.cmp_b_zip_bytes, sel_b)
                 st.session_state.cmp_df            = None
                 st.session_state.cmp_staged        = {}
                 st.session_state.cmp_manual_staged = {}
@@ -1160,9 +1207,11 @@ else:
             </div>""", unsafe_allow_html=True)
         else:
             st.markdown(f"""<div class="diff-banner-warn">
-                <div style="font-size:20px;font-weight:800;margin-bottom:4px;">⚠️ {n_issues} DIFFERENCE(S) FOUND</div>
+                <div style="font-size:20px;font-weight:800;margin-bottom:4px;">
+                    ⚠️ {n_issues} DIFFERENCE(S) FOUND</div>
                 <div style="font-size:13px;color:#8892a4;">
-                    Value differences: {n_diff} &nbsp;·&nbsp; Only in A: {n_only_a} &nbsp;·&nbsp; Only in B: {n_only_b}
+                    Value differences: {n_diff} &nbsp;·&nbsp;
+                    Only in A: {n_only_a} &nbsp;·&nbsp; Only in B: {n_only_b}
                 </div>
             </div>""", unsafe_allow_html=True)
 
@@ -1174,10 +1223,14 @@ else:
             ("🔵 ONLY A",    n_only_a, "#2196f3"),
             ("🟣 ONLY B",    n_only_b, "#9c27b0"),
         ]):
-            col.markdown(f'<div class="metric-card"><div class="metric-val" style="color:{color};">{val}</div>'
-                         f'<div class="metric-lbl">{lbl}</div></div>', unsafe_allow_html=True)
+            col.markdown(
+                f'<div class="metric-card">'
+                f'<div class="metric-val" style="color:{color};">{val}</div>'
+                f'<div class="metric-lbl">{lbl}</div></div>',
+                unsafe_allow_html=True)
 
-        st.markdown("""<div style="display:flex;gap:20px;flex-wrap:wrap;margin:12px 0 20px;font-size:12px;">
+        st.markdown("""<div style="display:flex;gap:20px;flex-wrap:wrap;
+            margin:12px 0 20px;font-size:12px;">
             <span>✅ <b>Identical</b> — same value</span>
             <span>⚠️ <b>Different</b> — value differs</span>
             <span>🔵 <b>Only in A</b> — not in B</span>
@@ -1197,14 +1250,14 @@ else:
             "match":  "✅ match",
         }
 
-        # Filter & Search
         st.markdown("### 🔎 Filter & Search")
         fs1, fs2, fs3 = st.columns([3, 2, 1])
         with fs1:
             cmp_search = st.text_input("Search", placeholder="e.g. PatientID, 0010,0020",
                                        key="cmp_search", label_visibility="collapsed")
         with fs2:
-            show_opt = st.selectbox("Show", ["All","Different Only","Only in A","Only in B","Identical"],
+            show_opt = st.selectbox("Show",
+                                    ["All","Different Only","Only in A","Only in B","Identical"],
                                     key="cmp_show_opt", label_visibility="collapsed")
         with fs3:
             page_size = st.selectbox("Rows per page", [25,50,100,200],
@@ -1219,7 +1272,7 @@ else:
         }
         df_view = df_full[df_full["Status"].isin(status_map[show_opt])].copy()
         if cmp_search:
-            esc = re.escape(cmp_search)
+            esc  = re.escape(cmp_search)
             mask = (df_view["Tag"].str.contains(esc, case=False, na=False)
                     | df_view["Keyword"].str.contains(esc, case=False, na=False)
                     | df_view["Value A"].str.contains(esc, case=False, na=False)
@@ -1230,13 +1283,14 @@ else:
 
         st.markdown("### 🗂️ Comparison Table")
         st.caption("✏️ Expand a tag in the sections below to edit its value in File B.")
-        st.markdown(f'<div class="table-info-text">Showing <b>{min(page_size, len(df_view))}</b> of '
-                    f'<b>{len(df_view)}</b> filtered rows &nbsp;·&nbsp; total: {n_total}</div>',
-                    unsafe_allow_html=True)
-        page = page_control("cmp_page", total_pages)
+        st.markdown(
+            f'<div class="table-info-text">Showing <b>{min(page_size, len(df_view))}</b> of '
+            f'<b>{len(df_view)}</b> filtered rows &nbsp;·&nbsp; total: {n_total}</div>',
+            unsafe_allow_html=True)
+        page    = page_control("cmp_page", total_pages)
         df_page = df_view.iloc[(page-1)*page_size : page*page_size].copy()
 
-        df_display = df_page[["Tag","Keyword","VR","Value A","Value B","Status"]].copy()
+        df_display        = df_page[["Tag","Keyword","VR","Value A","Value B","Status"]].copy()
         df_display["Diff"] = df_display["Status"].map(STATUS_ICONS)
 
         def color_rows(row):
@@ -1264,7 +1318,8 @@ else:
             & ~df_full["Tag"].isin(PROTECTED_TAGS)
         ].copy()
 
-        st.caption(f"**{len(editable_df)}** editable tag(s) · Stage changes then click Apply & Download.")
+        st.caption(f"**{len(editable_df)}** editable tag(s) · "
+                   "Stage changes then click Apply & Download.")
 
         if editable_df.empty:
             st.info("🎉 No differences — files are identical!" if edit_filter == "📋 All"
@@ -1281,12 +1336,10 @@ else:
                 with st.expander(label, expanded=False):
                     e1, e2 = st.columns([3, 2])
                     with e1:
-                        # ✅ 깔끔한 카드 UI
-                        st.markdown(
-                            render_val_card("🔵 Value A — Reference", row["Value A"], status)
-                            + render_val_card("🟣 Value B — Current", row["Value B"], status),
-                            unsafe_allow_html=True,
-                        )
+                        # ✅ 각각 독립 호출
+                        render_val_card("🔵 VALUE A — REFERENCE", row["Value A"], status)
+                        render_val_card("🟣 VALUE B — CURRENT",   row["Value B"], status,
+                                        show_status=True)
                     with e2:
                         st.markdown("**New value for B**")
                         current_staged = st.session_state.cmp_staged.get(tag, row["Value B"])
@@ -1310,22 +1363,21 @@ else:
         st.markdown("### 🔧 Manual Edit — Search & Edit Any Tag in File B")
         st.markdown(
             '<div class="manual-edit-box">'
-            '🔍 &nbsp;Search <b>any tag</b> (including identical ones) and edit its value in File B. '
+            '🔍 &nbsp;Search <b>any tag</b> (including identical ones) '
+            'and edit its value in File B. '
             'Staged changes are applied together with Inline Edits on download.'
             '</div>',
-            unsafe_allow_html=True,
-        )
+            unsafe_allow_html=True)
 
         manual_search = st.text_input(
             "🔍 Search tag",
             placeholder="e.g. SeriesDescription, 0008,103E, Siemens",
-            key="manual_search", label_visibility="collapsed",
-        )
+            key="manual_search", label_visibility="collapsed")
 
         all_tags_df = df_full[~df_full["Tag"].isin(PROTECTED_TAGS)].copy()
 
         if manual_search:
-            esc = re.escape(manual_search)
+            esc  = re.escape(manual_search)
             mask = (all_tags_df["Tag"].str.contains(esc, case=False, na=False)
                     | all_tags_df["Keyword"].str.contains(esc, case=False, na=False)
                     | all_tags_df["Value B"].str.contains(esc, case=False, na=False)
@@ -1349,12 +1401,10 @@ else:
                 with st.expander(label, expanded=True):
                     m1, m2 = st.columns([3, 2])
                     with m1:
-                        # ✅ 깔끔한 카드 UI
-                        st.markdown(
-                            render_val_card("🔵 Value A — Reference", row["Value A"], status)
-                            + render_val_card("🟣 Value B — Current", row["Value B"], status),
-                            unsafe_allow_html=True,
-                        )
+                        # ✅ 각각 독립 호출
+                        render_val_card("🔵 VALUE A — REFERENCE", row["Value A"], status)
+                        render_val_card("🟣 VALUE B — CURRENT",   row["Value B"], status,
+                                        show_status=True)
                     with m2:
                         st.markdown("**New value for B**")
                         cur_manual = st.session_state.cmp_manual_staged.get(tag, row["Value B"])
@@ -1382,13 +1432,16 @@ else:
                                     del st.session_state.cmp_manual_staged[tag]
                                     st.rerun()
 
-        # Manual Staged 목록
         if st.session_state.cmp_manual_staged:
             st.markdown(f"**📋 Manual Staged: {len(st.session_state.cmp_manual_staged)} tag(s)**")
             manual_rows = []
             for tag, val in st.session_state.cmp_manual_staged.items():
                 orig = df_full[df_full["Tag"] == tag]["Value B"].values
-                manual_rows.append({"Tag": tag, "Original B": orig[0] if len(orig) else "-", "New Value": val})
+                manual_rows.append({
+                    "Tag": tag,
+                    "Original B": orig[0] if len(orig) else "-",
+                    "New Value":  val,
+                })
             st.dataframe(pd.DataFrame(manual_rows), use_container_width=True, hide_index=True)
             if st.button("🗑️ Clear All Manual Staged", use_container_width=True):
                 st.session_state.cmp_manual_staged = {}
@@ -1398,26 +1451,37 @@ else:
         st.markdown("---")
         st.markdown("### 💾 Apply & Download Modified File B")
 
-        merged_staged = {**st.session_state.cmp_staged, **st.session_state.cmp_manual_staged}
+        merged_staged = {
+            **st.session_state.cmp_staged,
+            **st.session_state.cmp_manual_staged,
+        }
 
         if not merged_staged:
-            st.markdown('<div class="apply-hint">💡 Stage at least one edit above to enable download.</div>',
-                        unsafe_allow_html=True)
+            st.markdown(
+                '<div class="apply-hint">'
+                '💡 Stage at least one edit above to enable download.'
+                '</div>', unsafe_allow_html=True)
         else:
             staged_rows = []
             for tag, val in merged_staged.items():
                 orig   = df_full[df_full["Tag"] == tag]["Value B"].values
-                source = "🔧 Manual" if tag in st.session_state.cmp_manual_staged else "✏️ Inline"
-                staged_rows.append({"Source": source, "Tag": tag,
-                                    "Original B": orig[0] if len(orig) else "-", "New Value": val})
+                source = ("🔧 Manual" if tag in st.session_state.cmp_manual_staged
+                          else "✏️ Inline")
+                staged_rows.append({
+                    "Source":     source,
+                    "Tag":        tag,
+                    "Original B": orig[0] if len(orig) else "-",
+                    "New Value":  val,
+                })
             st.dataframe(pd.DataFrame(staged_rows), use_container_width=True, hide_index=True)
 
             has_zip_b = st.session_state.cmp_b_zip_bytes is not None
             if has_zip_b:
-                dl_mode = st.radio("dl_mode_radio",
-                                   ["📄 Single file — selected DCM only",
-                                    "📦 Full ZIP — apply to ALL files in ZIP B"],
-                                   key="cmp_dl_mode", horizontal=True, label_visibility="collapsed")
+                dl_mode = st.radio(
+                    "dl_mode_radio",
+                    ["📄 Single file — selected DCM only",
+                     "📦 Full ZIP — apply to ALL files in ZIP B"],
+                    key="cmp_dl_mode", horizontal=True, label_visibility="collapsed")
                 is_zip_mode = "Full ZIP" in dl_mode
             else:
                 is_zip_mode = False
@@ -1430,7 +1494,8 @@ else:
                 st.markdown(f"""<div class="dl-target-box">
                     <div class="dl-target-title">📦 Download Target — Full ZIP</div>
                     <div class="dl-target-desc">
-                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files in ZIP B<br>
+                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files in ZIP B
+                        (no compression — DICOM safe)<br>
                         <b>Source ZIP:</b> {st.session_state.cmp_b_name}<br>
                         <b>Changes:</b> {n_staged} tag(s) applied to every DICOM<br>
                         <b>Output:</b> {zip_out_name}
@@ -1459,8 +1524,8 @@ else:
                     st.rerun()
             with ac2:
                 n_zip_files = len(st.session_state.cmp_b_zip_list) if is_zip_mode else 0
-                btn_label = (f"🚀 Apply to All {n_zip_files} Files & Create ZIP"
-                             if is_zip_mode else "🚀 Apply & Download Single DCM")
+                btn_label   = (f"🚀 Apply to All {n_zip_files} Files & Create ZIP"
+                               if is_zip_mode else "🚀 Apply & Download Single DCM")
                 if st.button(btn_label, type="primary", use_container_width=True):
                     if is_zip_mode:
                         with st.spinner(f"Applying {n_staged} change(s) to all files in ZIP B..."):
@@ -1472,7 +1537,8 @@ else:
                         st.session_state.cmp_result_log     = results
                     else:
                         with st.spinner("Applying changes to selected DCM..."):
-                            rb, results = apply_modifications_to_ds(st.session_state.cmp_ds_b, merged_staged)
+                            rb, results = apply_modifications_to_ds(
+                                st.session_state.cmp_ds_b, merged_staged)
                         st.session_state.cmp_result_bytes   = rb
                         st.session_state.cmp_result_zip     = None
                         st.session_state.cmp_result_summary = None
@@ -1480,28 +1546,35 @@ else:
 
             if st.session_state.cmp_result_bytes:
                 b_base = Path(st.session_state.cmp_b_name).stem
-                st.markdown('<div class="success-banner">✅ Modified File B ready for download!</div>',
-                            unsafe_allow_html=True)
-                st.download_button(label="⬇️ Download Modified File B (.dcm)",
-                                   data=st.session_state.cmp_result_bytes,
-                                   file_name=f"{b_base}_modified.dcm",
-                                   mime="application/octet-stream",
-                                   use_container_width=True, type="primary")
+                st.markdown(
+                    '<div class="success-banner">✅ Modified File B ready for download!</div>',
+                    unsafe_allow_html=True)
+                st.download_button(
+                    label="⬇️ Download Modified File B (.dcm)",
+                    data=st.session_state.cmp_result_bytes,
+                    file_name=f"{b_base}_modified.dcm",
+                    mime="application/octet-stream",
+                    use_container_width=True, type="primary")
 
             if st.session_state.cmp_result_zip:
                 s = st.session_state.cmp_result_summary
-                st.markdown(f'<div class="success-banner">✅ Modified ZIP ready! &nbsp;'
-                            f"Processed: <b>{s['success']}</b> &nbsp;·&nbsp; "
-                            f"Skipped: <b>{s['skipped']}</b> &nbsp;·&nbsp; "
-                            f"Errors: <b>{s['errors']}</b></div>", unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="success-banner">✅ Modified ZIP ready! &nbsp;'
+                    f"Processed: <b>{s['success']}</b> &nbsp;·&nbsp; "
+                    f"Skipped: <b>{s['skipped']}</b> &nbsp;·&nbsp; "
+                    f"Errors: <b>{s['errors']}</b></div>",
+                    unsafe_allow_html=True)
                 mc1, mc2, mc3, mc4 = st.columns(4)
-                mc1.metric("📁 Total", s["total"]); mc2.metric("✅ Processed", s["success"])
-                mc3.metric("⏭️ Skipped", s["skipped"]); mc4.metric("❌ Errors", s["errors"])
+                mc1.metric("📁 Total",     s["total"])
+                mc2.metric("✅ Processed", s["success"])
+                mc3.metric("⏭️ Skipped",   s["skipped"])
+                mc4.metric("❌ Errors",    s["errors"])
                 zip_out_name = st.session_state.cmp_b_name.replace(".zip", "_modified.zip")
-                st.download_button(label=f"⬇️ Download Modified ZIP ({s['success']} files)",
-                                   data=st.session_state.cmp_result_zip,
-                                   file_name=zip_out_name, mime="application/zip",
-                                   use_container_width=True, type="primary")
+                st.download_button(
+                    label=f"⬇️ Download Modified ZIP ({s['success']} files)",
+                    data=st.session_state.cmp_result_zip,
+                    file_name=zip_out_name, mime="application/zip",
+                    use_container_width=True, type="primary")
                 if st.session_state.cmp_result_log:
                     with st.expander("📊 Modification Report", expanded=False):
                         st.dataframe(pd.DataFrame(st.session_state.cmp_result_log),
@@ -1509,25 +1582,28 @@ else:
 
             if st.session_state.cmp_result_bytes or st.session_state.cmp_result_zip:
                 log_csv = pd.DataFrame(staged_rows).to_csv(index=False).encode("utf-8")
-                st.download_button(label="⬇️ Download Change Log CSV",
-                                   data=log_csv, file_name="change_log.csv",
-                                   mime="text/csv", use_container_width=True)
+                st.download_button(
+                    label="⬇️ Download Change Log CSV",
+                    data=log_csv, file_name="change_log.csv",
+                    mime="text/csv", use_container_width=True)
 
         st.markdown("---")
         st.markdown("### 📥 Export Full Diff Report")
         ex1, ex2 = st.columns(2)
         with ex1:
-            st.download_button(label="⬇️ Download Full Diff CSV",
-                               data=df_full.to_csv(index=False).encode("utf-8"),
-                               file_name="dicom_diff.csv", mime="text/csv",
-                               use_container_width=True)
+            st.download_button(
+                label="⬇️ Download Full Diff CSV",
+                data=df_full.to_csv(index=False).encode("utf-8"),
+                file_name="dicom_diff.csv", mime="text/csv",
+                use_container_width=True)
         with ex2:
             if OPENPYXL_OK:
-                st.download_button(label="⬇️ Download Full Diff Excel",
-                                   data=make_excel_diff(df_full),
-                                   file_name="dicom_diff.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                   use_container_width=True)
+                st.download_button(
+                    label="⬇️ Download Full Diff Excel",
+                    data=make_excel_diff(df_full),
+                    file_name="dicom_diff.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True)
             else:
                 st.info("💡 `pip install openpyxl` to enable Excel export.")
 
@@ -1550,7 +1626,8 @@ with st.sidebar:
     </div>""", unsafe_allow_html=True)
 
     st.divider()
-    st.markdown('<div class="sidebar-section-title">📖 How to Use</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">📖 How to Use</div>',
+                unsafe_allow_html=True)
     st.markdown("""
     <div class="mode-label">Validation Mode</div>
     <div class="how-step"><div class="how-step-num">1</div>
@@ -1567,13 +1644,14 @@ with st.sidebar:
     <div class="how-step"><div class="how-step-num">2</div>
         <div class="how-step-text">Run Comparison → View Diff Table</div></div>
     <div class="how-step"><div class="how-step-num">3</div>
-        <div class="how-step-text">Inline Edit (diff tags) or Manual Edit (any tag)</div></div>
+        <div class="how-step-text">Inline Edit (diff) or Manual Edit (any tag)</div></div>
     <div class="how-step"><div class="how-step-num">4</div>
         <div class="how-step-text">Apply → Single DCM or Full ZIP download</div></div>
     """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown('<div class="sidebar-section-title">⚠️ Notes</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">⚠️ Notes</div>',
+                unsafe_allow_html=True)
     st.markdown("""
     <div class="note-item"><span class="note-icon">🔒</span>
         <span>Original files are <b>never modified</b></span></div>
@@ -1582,61 +1660,98 @@ with st.sidebar:
     <div class="note-item"><span class="note-icon">💾</span>
         <span>Transfer Syntax &amp; Meta Header <b>fully preserved</b></span></div>
     <div class="note-item"><span class="note-icon">📦</span>
-        <span>ZIP: macOS meta-files auto-excluded</span></div>
+        <span>ZIP saved without compression <b>(DICOM safe)</b></span></div>
     <div class="note-item"><span class="note-icon">🚫</span>
         <span>Do <b>not</b> upload real patient data (PHI)</span></div>
     """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown('<div class="sidebar-section-title">🔧 Common Tags</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-section-title">🔧 Common Tags</div>',
+                unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["Standard", "AIRS Upload", "AIRS Recon"])
 
     with tab1:
         st.markdown("""
-        <div class="tag-row"><span class="tag-code">(0020,000E)</span><span class="tag-name">SeriesInstanceUID</span></div>
-        <div class="tag-row"><span class="tag-code">(0020,000D)</span><span class="tag-name">StudyInstanceUID</span></div>
-        <div class="tag-row"><span class="tag-code">(0008,103E)</span><span class="tag-name">SeriesDescription</span></div>
-        <div class="tag-row"><span class="tag-code">(0010,0010)</span><span class="tag-name">PatientName</span></div>
-        <div class="tag-row"><span class="tag-code">(0008,0060)</span><span class="tag-name">Modality</span></div>
-        <div class="tag-row"><span class="tag-code">(2001,9000)</span><span class="tag-name">Private (Philips)</span></div>
+        <div class="tag-row"><span class="tag-code">(0020,000E)</span>
+            <span class="tag-name">SeriesInstanceUID</span></div>
+        <div class="tag-row"><span class="tag-code">(0020,000D)</span>
+            <span class="tag-name">StudyInstanceUID</span></div>
+        <div class="tag-row"><span class="tag-code">(0008,103E)</span>
+            <span class="tag-name">SeriesDescription</span></div>
+        <div class="tag-row"><span class="tag-code">(0010,0010)</span>
+            <span class="tag-name">PatientName</span></div>
+        <div class="tag-row"><span class="tag-code">(0008,0060)</span>
+            <span class="tag-name">Modality</span></div>
+        <div class="tag-row"><span class="tag-code">(2001,9000)</span>
+            <span class="tag-name">Private (Philips)</span></div>
         """, unsafe_allow_html=True)
 
     with tab2:
         st.markdown("""
-        <div class="tag-row"><span class="tag-code">(00E1,1010)</span><span class="tag-name">StudyId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1011)</span><span class="tag-name">SeriesId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1012)</span><span class="tag-name">ImageId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1014)</span><span class="tag-name">UploadId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1015)</span><span class="tag-name">DeviceId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1030)</span><span class="tag-name">DispatchUnitId</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1031)</span><span class="tag-name">PostProcessingType</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1032)</span><span class="tag-name">SourceDispatchUnitId</span><span class="tag-vr">SH</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1033)</span><span class="tag-name">ADCType</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1034)</span><span class="tag-name">ADCNoiseThreshold</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1035)</span><span class="tag-name">BValue</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1036)</span><span class="tag-name">IsMarked</span><span class="tag-vr">CS</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1037)</span><span class="tag-name">NumberOfProjections</span><span class="tag-vr">IS</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1038)</span><span class="tag-name">RadialAngle</span><span class="tag-vr">IS</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1039)</span><span class="tag-name">Zoom</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1040)</span><span class="tag-name">SliceOrder</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1041)</span><span class="tag-name">Orientation</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1042)</span><span class="tag-name">Gap</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1043)</span><span class="tag-name">Thickness</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1044)</span><span class="tag-name">CalculatedBvalue</span><span class="tag-vr">SL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1045)</span><span class="tag-name">PostprocessingMode</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1010)</span>
+            <span class="tag-name">StudyId</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1011)</span>
+            <span class="tag-name">SeriesId</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1012)</span>
+            <span class="tag-name">ImageId</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1014)</span>
+            <span class="tag-name">UploadId</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1015)</span>
+            <span class="tag-name">DeviceId</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1030)</span>
+            <span class="tag-name">DispatchUnitId</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1031)</span>
+            <span class="tag-name">PostProcessingType</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1032)</span>
+            <span class="tag-name">SourceDispatchUnitId</span><span class="tag-vr">SH</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1033)</span>
+            <span class="tag-name">ADCType</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1034)</span>
+            <span class="tag-name">ADCNoiseThreshold</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1035)</span>
+            <span class="tag-name">BValue</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1036)</span>
+            <span class="tag-name">IsMarked</span><span class="tag-vr">CS</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1037)</span>
+            <span class="tag-name">NumberOfProjections</span><span class="tag-vr">IS</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1038)</span>
+            <span class="tag-name">RadialAngle</span><span class="tag-vr">IS</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1039)</span>
+            <span class="tag-name">Zoom</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1040)</span>
+            <span class="tag-name">SliceOrder</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1041)</span>
+            <span class="tag-name">Orientation</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1042)</span>
+            <span class="tag-name">Gap</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1043)</span>
+            <span class="tag-name">Thickness</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1044)</span>
+            <span class="tag-name">CalculatedBvalue</span><span class="tag-vr">SL</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1045)</span>
+            <span class="tag-name">PostprocessingMode</span><span class="tag-vr">LO</span></div>
         """, unsafe_allow_html=True)
 
     with tab3:
         st.markdown("""
-        <div class="tag-row"><span class="tag-code">(00E1,1020)</span><span class="tag-name">InputSnr</span><span class="tag-vr">FL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1021)</span><span class="tag-name">OutputSnr</span><span class="tag-vr">FL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1022)</span><span class="tag-name">DenoisingLevel</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1023)</span><span class="tag-name">Sharpness</span><span class="tag-vr">FL</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1024)</span><span class="tag-name">ModelPath</span><span class="tag-vr">OB</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1025)</span><span class="tag-name">ModelHeader</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1026)</span><span class="tag-name">ModelVersion</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1034)</span><span class="tag-name">ADCNoiseThreshold</span><span class="tag-vr">LO</span></div>
-        <div class="tag-row"><span class="tag-code">(00E1,1035)</span><span class="tag-name">BValue</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1020)</span>
+            <span class="tag-name">InputSnr</span><span class="tag-vr">FL</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1021)</span>
+            <span class="tag-name">OutputSnr</span><span class="tag-vr">FL</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1022)</span>
+            <span class="tag-name">DenoisingLevel</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1023)</span>
+            <span class="tag-name">Sharpness</span><span class="tag-vr">FL</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1024)</span>
+            <span class="tag-name">ModelPath</span><span class="tag-vr">OB</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1025)</span>
+            <span class="tag-name">ModelHeader</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1026)</span>
+            <span class="tag-name">ModelVersion</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1034)</span>
+            <span class="tag-name">ADCNoiseThreshold</span><span class="tag-vr">LO</span></div>
+        <div class="tag-row"><span class="tag-code">(00E1,1035)</span>
+            <span class="tag-name">BValue</span><span class="tag-vr">LO</span></div>
         """, unsafe_allow_html=True)
 
     st.divider()
