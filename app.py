@@ -332,7 +332,7 @@ st.markdown("""
 .page-total { font-size:14px; font-weight:500; }
 .manual-edit-box { border-radius:10px; padding:12px 16px; margin-bottom:12px; font-size:13px; }
 
-/* Value Card */
+/* ✅ Value Card - max-height 제거, 전체 표시 */
 .val-card { border-radius:10px; padding:12px 14px; margin-bottom:8px; }
 .val-label {
     font-size:10px; font-weight:700; letter-spacing:1px;
@@ -342,7 +342,6 @@ st.markdown("""
     font-family:monospace; font-size:11px;
     padding:7px 9px; border-radius:6px;
     word-break:break-all; line-height:1.6;
-    /* ✅ max-height 제거 → 전체 표시 */
     white-space:pre-wrap;
     overflow-x:auto;
 }
@@ -350,9 +349,11 @@ st.markdown("""
     display:flex; align-items:center; gap:6px;
     margin-top:6px; font-size:11px; font-weight:600;
 }
+</style>
+""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
-# HEADER
+# HEADER  ✅ · → &middot;
 # ══════════════════════════════════════════════════════
 st.markdown(f"""
 <div class="airs-header">
@@ -397,7 +398,7 @@ def page_control(key: str, total_pages: int) -> int:
     return st.session_state[cur_key]
 
 # ══════════════════════════════════════════════════════
-# ✅ VALUE CARD — HTML 문자열 반환 (st.markdown 호출 없음)
+# ✅ VALUE CARD — 글자 수 제한 없이 전체 표시
 # ══════════════════════════════════════════════════════
 def val_card_html(label: str, value: str, status: str, show_status: bool = False) -> str:
     status_meta = {
@@ -407,11 +408,8 @@ def val_card_html(label: str, value: str, status: str, show_status: bool = False
         "only_b": ("🟣 Only in B", "val-status-only_b"),
     }
     icon_text, icon_cls = status_meta.get(status, ("", ""))
-
-    # ✅ 글자 수 제한 없이 전체 표시
     raw  = value if value else "— (empty)"
-    safe = html_mod.escape(raw)
-
+    safe = html_mod.escape(raw)   # ✅ 글자 수 제한 없이 전체 이스케이프
     status_html = (
         f'<div class="val-status-row"><span class="{icon_cls}">{icon_text}</span></div>'
         if show_status and icon_cls else ""
@@ -423,7 +421,6 @@ def val_card_html(label: str, value: str, status: str, show_status: bool = False
         f'{status_html}'
         '</div>'
     )
-
 
 # ══════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
@@ -723,7 +720,7 @@ else:
     <div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.25);
         border-radius:8px;padding:8px 16px;font-size:12px;color:#00c864;margin-bottom:12px;
         display:flex;align-items:center;gap:8px;">
-        🔒 <b>PHI Confirmed</b> — No real patient data will be uploaded.
+        🔒 <b>PHI Confirmed</b> &nbsp;&middot;&nbsp; No real patient data will be uploaded.
     </div>
     """, unsafe_allow_html=True)
 
@@ -737,7 +734,7 @@ if st.session_state.app_mode == "editor":
       <div class="step-header" style="gap:14px;">
         <span style="font-size:28px;">🔍</span>
         <div>
-          <p class="step-title" style="margin-bottom:4px;">Validation Mode — Single / Batch DICOM Tag Editor</p>
+          <p class="step-title" style="margin-bottom:4px;">Validation Mode &nbsp;&mdash;&nbsp; Single / Batch DICOM Tag Editor</p>
           <p style="margin:0;font-size:13px;color:#8892a4;">
             Upload a single .dcm or a .zip archive &nbsp;&middot;&nbsp;
             Search &amp; edit tags &nbsp;&middot;&nbsp; Download modified file
@@ -998,7 +995,7 @@ if st.session_state.app_mode == "editor":
                 st.markdown(f"""<div class="dl-target-box">
                     <div class="dl-target-title">📦 Download Target</div>
                     <div class="dl-target-desc">
-                        <b>Mode:</b> Batch ZIP (no compression — DICOM safe)<br>
+                        <b>Mode:</b> Batch ZIP (no compression &nbsp;&middot;&nbsp; DICOM safe)<br>
                         <b>File:</b> {st.session_state.filename} &nbsp;&middot;&nbsp; {n_files} files<br>
                         <b>Changes:</b> {n_mods} tag(s) applied to every DICOM<br>
                         <b>Output:</b> {zip_out}
@@ -1040,7 +1037,7 @@ else:
       <div class="step-header" style="gap:14px;">
         <span style="font-size:28px;">⚖️</span>
         <div>
-          <p class="step-title" style="margin-bottom:4px;">Compare Mode — Side-by-Side DICOM Diff</p>
+          <p class="step-title" style="margin-bottom:4px;">Compare Mode &nbsp;&mdash;&nbsp; Side-by-Side DICOM Diff</p>
           <p style="margin:0;font-size:13px;color:#8892a4;">
             Upload two DICOM files (or ZIP archives) to compare all tags
             &nbsp;&middot;&nbsp; Highlighted differences &nbsp;&middot;&nbsp; Inline value editing
@@ -1209,14 +1206,6 @@ else:
                 f'<div class="metric-lbl">{lbl}</div></div>',
                 unsafe_allow_html=True)
 
-        st.markdown("""<div style="display:flex;gap:20px;flex-wrap:wrap;
-            margin:12px 0 20px;font-size:12px;">
-            <span>✅ <b>Identical</b></span>
-            <span>⚠️ <b>Different</b></span>
-            <span>🔵 <b>Only in A</b></span>
-            <span>🟣 <b>Only in B</b></span>
-        </div>""", unsafe_allow_html=True)
-
         STATUS_COLORS = {
             "diff":   "rgba(255,152,0,0.15)",
             "only_a": "rgba(33,150,243,0.12)",
@@ -1298,8 +1287,7 @@ else:
             & ~df_full["Tag"].isin(PROTECTED_TAGS)
         ].copy()
 
-        st.caption(f"**{len(editable_df)}** editable tag(s) &middot; "
-                   "Stage changes then click Apply & Download.")
+        st.caption(f"**{len(editable_df)}** editable tag(s) — Stage changes then click Apply & Download.")
 
         if editable_df.empty:
             st.info("🎉 No differences — files are identical!" if edit_filter == "📋 All"
@@ -1316,10 +1304,9 @@ else:
                 with st.expander(label, expanded=False):
                     e1, e2 = st.columns([3, 2])
                     with e1:
-                        # ✅ 두 카드를 합쳐서 한 번에 렌더링
                         st.markdown(
                             val_card_html("🔵 VALUE A — REFERENCE", row["Value A"], status)
-                            + val_card_html("🟣 VALUE B — CURRENT", row["Value B"], status,
+                            + val_card_html("🟣 VALUE B — CURRENT",  row["Value B"], status,
                                             show_status=True),
                             unsafe_allow_html=True
                         )
@@ -1352,7 +1339,7 @@ else:
             '</div>', unsafe_allow_html=True)
 
         manual_search = st.text_input(
-            "🔍 Search tag",
+            "Search tag",
             placeholder="e.g. SeriesDescription, 0008,103E",
             key="manual_search", label_visibility="collapsed")
 
@@ -1383,10 +1370,9 @@ else:
                 with st.expander(label, expanded=True):
                     m1, m2 = st.columns([3, 2])
                     with m1:
-                        # ✅ 두 카드를 합쳐서 한 번에 렌더링
                         st.markdown(
                             val_card_html("🔵 VALUE A — REFERENCE", row["Value A"], status)
-                            + val_card_html("🟣 VALUE B — CURRENT", row["Value B"], status,
+                            + val_card_html("🟣 VALUE B — CURRENT",  row["Value B"], status,
                                             show_status=True),
                             unsafe_allow_html=True
                         )
@@ -1476,9 +1462,9 @@ else:
                 n_zip_files  = len(st.session_state.cmp_b_zip_list)
                 zip_out_name = st.session_state.cmp_b_name.replace(".zip", "_modified.zip")
                 st.markdown(f"""<div class="dl-target-box">
-                    <div class="dl-target-title">📦 Download Target — Full ZIP</div>
+                    <div class="dl-target-title">📦 Download Target &nbsp;&mdash;&nbsp; Full ZIP</div>
                     <div class="dl-target-desc">
-                        <b>Mode:</b> Batch — ALL {n_zip_files} DICOM files (no compression)<br>
+                        <b>Mode:</b> Batch &nbsp;&middot;&nbsp; ALL {n_zip_files} DICOM files (no compression)<br>
                         <b>Source ZIP:</b> {st.session_state.cmp_b_name}<br>
                         <b>Changes:</b> {n_staged} tag(s) applied to every DICOM<br>
                         <b>Output:</b> {zip_out_name}
@@ -1487,7 +1473,7 @@ else:
                 b_base = Path(st.session_state.cmp_b_name).stem
                 b_sel  = st.session_state.cmp_b_sel or st.session_state.cmp_b_name
                 st.markdown(f"""<div class="dl-target-box">
-                    <div class="dl-target-title">📄 Download Target — Single DCM</div>
+                    <div class="dl-target-title">📄 Download Target &nbsp;&mdash;&nbsp; Single DCM</div>
                     <div class="dl-target-desc">
                         <b>Mode:</b> Single file only<br>
                         <b>File:</b> {b_sel}<br>
@@ -1541,10 +1527,10 @@ else:
             if st.session_state.cmp_result_zip:
                 s = st.session_state.cmp_result_summary
                 st.markdown(
-                    f'<div class="success-banner">✅ Modified ZIP ready! &nbsp;'
-                    f"Processed: <b>{s['success']}</b> &nbsp;&middot;&nbsp; "
-                    f"Skipped: <b>{s['skipped']}</b> &nbsp;&middot;&nbsp; "
-                    f"Errors: <b>{s['errors']}</b></div>",
+                    f'<div class="success-banner">✅ Modified ZIP ready! &nbsp;&middot;&nbsp;'
+                    f" Processed: <b>{s['success']}</b> &nbsp;&middot;&nbsp;"
+                    f" Skipped: <b>{s['skipped']}</b> &nbsp;&middot;&nbsp;"
+                    f" Errors: <b>{s['errors']}</b></div>",
                     unsafe_allow_html=True)
                 mc1, mc2, mc3, mc4 = st.columns(4)
                 mc1.metric("📁 Total",     s["total"])
@@ -1616,18 +1602,18 @@ with st.sidebar:
     <div class="how-step"><div class="how-step-num">2</div>
         <div class="how-step-text">Search &amp; browse tags (paginated)</div></div>
     <div class="how-step"><div class="how-step-num">3</div>
-        <div class="how-step-text">Select tag → Enter value → Queue</div></div>
+        <div class="how-step-text">Select tag &rarr; Enter value &rarr; Queue</div></div>
     <div class="how-step"><div class="how-step-num">4</div>
-        <div class="how-step-text">Check Download Target → Apply &amp; Download</div></div>
+        <div class="how-step-text">Check Download Target &rarr; Apply &amp; Download</div></div>
     <div class="mode-label" style="margin-top:14px;">Compare Mode</div>
     <div class="how-step"><div class="how-step-num">1</div>
         <div class="how-step-text">Upload File A + File B (.dcm or .zip)</div></div>
     <div class="how-step"><div class="how-step-num">2</div>
-        <div class="how-step-text">Run Comparison → View Diff Table</div></div>
+        <div class="how-step-text">Run Comparison &rarr; View Diff Table</div></div>
     <div class="how-step"><div class="how-step-num">3</div>
         <div class="how-step-text">Inline Edit (diff) or Manual Edit (any tag)</div></div>
     <div class="how-step"><div class="how-step-num">4</div>
-        <div class="how-step-text">Apply → Single DCM or Full ZIP download</div></div>
+        <div class="how-step-text">Apply &rarr; Single DCM or Full ZIP download</div></div>
     """, unsafe_allow_html=True)
 
     st.divider()
@@ -1736,5 +1722,5 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     <div style="text-align:center;font-size:11px;color:#4a5568;padding:8px 0;">
-        © 2026 AIRS Medical Inc.<br>All rights reserved.<br>Global Technical Support
+        &copy; 2026 AIRS Medical Inc.<br>All rights reserved.<br>Global Technical Support
     </div>""", unsafe_allow_html=True)
