@@ -403,29 +403,35 @@ def page_control(key: str, total_pages: int) -> int:
 # ✅ VALUE CARD — HTML 문자열 반환 (st.markdown 호출 없음)
 # ══════════════════════════════════════════════════════
 def val_card_html(label: str, value: str, status: str, show_status: bool = False) -> str:
-    status_icons = {
+    status_meta = {
         "match":  ("✅ Identical", "val-status-match"),
         "diff":   ("⚠️ Different", "val-status-diff"),
         "only_a": ("🔵 Only in A", "val-status-only_a"),
         "only_b": ("🟣 Only in B", "val-status-only_b"),
     }
-    icon_text, icon_cls = status_icons.get(status, ("", ""))
-    display_val = value if value else "— (empty)"
-    safe_val    = html_mod.escape(display_val[:300]) + ("..." if len(display_val) > 300 else "")
-    safe_label  = html_mod.escape(label)
+    icon_text, icon_cls = status_meta.get(status, ("", ""))
+
+    # 값 안전 처리: HTML 이스케이프 후 300자 제한
+    raw   = value if value else "— (empty)"
+    safe  = html_mod.escape(raw)
+    # 이스케이프 후 길이 제한 (엔티티 중간 자르지 않도록 raw 기준으로 자름)
+    if len(raw) > 300:
+        safe = html_mod.escape(raw[:300]) + " ..."
+
+    # label은 이스케이프하지 않음 (이모지+텍스트만 사용, HTML 태그 없음)
     status_html = (
-        f'<div class="val-status-row">'
-        f'<span class="{icon_cls}">{icon_text}</span>'
-        f'</div>'
+        f'<div class="val-status-row"><span class="{icon_cls}">{icon_text}</span></div>'
         if show_status and icon_cls else ""
     )
+
     return (
-        f'<div class="val-card">'
-        f'<div class="val-label">{safe_label}</div>'
-        f'<div class="val-content">{safe_val}</div>'
+        '<div class="val-card">'
+        f'<div class="val-label">{label}</div>'
+        f'<div class="val-content">{safe}</div>'
         f'{status_html}'
-        f'</div>'
+        '</div>'
     )
+
 
 # ══════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
