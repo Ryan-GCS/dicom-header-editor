@@ -332,10 +332,8 @@ st.markdown("""
 .page-total { font-size:14px; font-weight:500; }
 .manual-edit-box { border-radius:10px; padding:12px 16px; margin-bottom:12px; font-size:13px; }
 
-/* ✅ Value Card */
-.val-card {
-    border-radius:10px; padding:12px 14px; margin-bottom:8px;
-}
+/* Value Card */
+.val-card { border-radius:10px; padding:12px 14px; margin-bottom:8px; }
 .val-label {
     font-size:10px; font-weight:700; letter-spacing:1px;
     text-transform:uppercase; margin-bottom:6px;
@@ -343,16 +341,15 @@ st.markdown("""
 .val-content {
     font-family:monospace; font-size:11px;
     padding:7px 9px; border-radius:6px;
-    word-break:break-all; line-height:1.5;
-    max-height:80px; overflow-y:auto;
+    word-break:break-all; line-height:1.6;
+    /* ✅ max-height 제거 → 전체 표시 */
     white-space:pre-wrap;
+    overflow-x:auto;
 }
 .val-status-row {
     display:flex; align-items:center; gap:6px;
     margin-top:6px; font-size:11px; font-weight:600;
 }
-</style>
-""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # HEADER
@@ -411,19 +408,14 @@ def val_card_html(label: str, value: str, status: str, show_status: bool = False
     }
     icon_text, icon_cls = status_meta.get(status, ("", ""))
 
-    # 값 안전 처리: HTML 이스케이프 후 300자 제한
-    raw   = value if value else "— (empty)"
-    safe  = html_mod.escape(raw)
-    # 이스케이프 후 길이 제한 (엔티티 중간 자르지 않도록 raw 기준으로 자름)
-    if len(raw) > 300:
-        safe = html_mod.escape(raw[:300]) + " ..."
+    # ✅ 글자 수 제한 없이 전체 표시
+    raw  = value if value else "— (empty)"
+    safe = html_mod.escape(raw)
 
-    # label은 이스케이프하지 않음 (이모지+텍스트만 사용, HTML 태그 없음)
     status_html = (
         f'<div class="val-status-row"><span class="{icon_cls}">{icon_text}</span></div>'
         if show_status and icon_cls else ""
     )
-
     return (
         '<div class="val-card">'
         f'<div class="val-label">{label}</div>'
