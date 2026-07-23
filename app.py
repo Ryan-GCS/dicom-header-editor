@@ -359,7 +359,7 @@ st.markdown(f"""
     <div class="airs-logo-box">{logo_html}</div>
     <div class="airs-title">
         <h1>SwiftMR</h1>
-        <p>DICOM Header Editor &nbsp;·&nbsp; Internal Tool</p>
+        <p>DICOM Header Editor &nbsp;&middot;&nbsp; Internal Tool</p>
     </div>
     <div class="airs-badge">v2.0</div>
 </div>
@@ -739,8 +739,8 @@ if st.session_state.app_mode == "editor":
         <div>
           <p class="step-title" style="margin-bottom:4px;">Validation Mode — Single / Batch DICOM Tag Editor</p>
           <p style="margin:0;font-size:13px;color:#8892a4;">
-            Upload a single .dcm or a .zip archive &nbsp;·&nbsp;
-            Search &amp; edit tags &nbsp;·&nbsp; Download modified file
+            Upload a single .dcm or a .zip archive &nbsp;&middot;&nbsp;
+            Search &amp; edit tags &nbsp;&middot;&nbsp; Download modified file
           </p>
         </div>
       </div>
@@ -774,7 +774,7 @@ if st.session_state.app_mode == "editor":
             <div class="diff-banner-ok">
                 <div style="font-size:16px;font-weight:800;margin-bottom:4px;">✅ File Loaded Successfully</div>
                 <div style="font-size:13px;color:#8892a4;">
-                    <b>{st.session_state.filename}</b> &nbsp;·&nbsp; {n_tags} tags found
+                    <b>{st.session_state.filename}</b> &nbsp;&middot;&nbsp; {n_tags} tags found
                 </div>
             </div>""", unsafe_allow_html=True)
     else:
@@ -813,8 +813,8 @@ if st.session_state.app_mode == "editor":
                     <div style="font-size:16px;font-weight:800;margin-bottom:4px;">✅ ZIP Loaded Successfully</div>
                     <div style="font-size:13px;color:#8892a4;">
                         <b>{st.session_state.filename}</b>
-                        &nbsp;·&nbsp; {len(file_list)} files
-                        &nbsp;·&nbsp; {len(st.session_state.tags_df)} tags
+                        &nbsp;&middot;&nbsp; {len(file_list)} files
+                        &nbsp;&middot;&nbsp; {len(st.session_state.tags_df)} tags
                     </div>
                 </div>""", unsafe_allow_html=True)
                 with st.expander(f"📂 View {len(file_list)} files in ZIP", expanded=False):
@@ -870,7 +870,7 @@ if st.session_state.app_mode == "editor":
         st.markdown("### 🗂️ Tag Table")
         st.markdown(
             f'<div class="table-info-text">Showing <b>{min(ed_page_size, len(df))}</b> of '
-            f'<b>{len(df)}</b> tags &nbsp;·&nbsp; total: {n_total}</div>',
+            f'<b>{len(df)}</b> tags &nbsp;&middot;&nbsp; total: {n_total}</div>',
             unsafe_allow_html=True)
         ed_page    = page_control("editor_page", ed_total_pages)
         df_page_ed = df.iloc[(ed_page-1)*ed_page_size : ed_page*ed_page_size].copy()
@@ -999,7 +999,7 @@ if st.session_state.app_mode == "editor":
                     <div class="dl-target-title">📦 Download Target</div>
                     <div class="dl-target-desc">
                         <b>Mode:</b> Batch ZIP (no compression — DICOM safe)<br>
-                        <b>File:</b> {st.session_state.filename} &nbsp;·&nbsp; {n_files} files<br>
+                        <b>File:</b> {st.session_state.filename} &nbsp;&middot;&nbsp; {n_files} files<br>
                         <b>Changes:</b> {n_mods} tag(s) applied to every DICOM<br>
                         <b>Output:</b> {zip_out}
                     </div></div>""", unsafe_allow_html=True)
@@ -1043,7 +1043,7 @@ else:
           <p class="step-title" style="margin-bottom:4px;">Compare Mode — Side-by-Side DICOM Diff</p>
           <p style="margin:0;font-size:13px;color:#8892a4;">
             Upload two DICOM files (or ZIP archives) to compare all tags
-            &nbsp;·&nbsp; Highlighted differences &nbsp;·&nbsp; Inline value editing
+            &nbsp;&middot;&nbsp; Highlighted differences &nbsp;&middot;&nbsp; Inline value editing
           </p>
         </div>
       </div>
@@ -1190,8 +1190,8 @@ else:
                 <div style="font-size:20px;font-weight:800;margin-bottom:4px;">
                     ⚠️ {n_issues} DIFFERENCE(S) FOUND</div>
                 <div style="font-size:13px;color:#8892a4;">
-                    Value differences: {n_diff} &nbsp;·&nbsp;
-                    Only in A: {n_only_a} &nbsp;·&nbsp; Only in B: {n_only_b}
+                    Value differences: {n_diff} &nbsp;&middot;&nbsp;
+                    Only in A: {n_only_a} &nbsp;&middot;&nbsp; Only in B: {n_only_b}
                 </div>
             </div>""", unsafe_allow_html=True)
 
@@ -1265,7 +1265,7 @@ else:
         st.caption("✏️ Expand a tag in the sections below to edit its value in File B.")
         st.markdown(
             f'<div class="table-info-text">Showing <b>{min(page_size, len(df_view))}</b> of '
-            f'<b>{len(df_view)}</b> filtered rows &nbsp;·&nbsp; total: {n_total}</div>',
+            f'<b>{len(df_view)}</b> filtered rows &nbsp;&middot;&nbsp; total: {n_total}</div>',
             unsafe_allow_html=True)
         page    = page_control("cmp_page", total_pages)
         df_page = df_view.iloc[(page-1)*page_size : page*page_size].copy()
@@ -1298,7 +1298,7 @@ else:
             & ~df_full["Tag"].isin(PROTECTED_TAGS)
         ].copy()
 
-        st.caption(f"**{len(editable_df)}** editable tag(s) · "
+        st.caption(f"**{len(editable_df)}** editable tag(s) &middot; "
                    "Stage changes then click Apply & Download.")
 
         if editable_df.empty:
@@ -1542,8 +1542,8 @@ else:
                 s = st.session_state.cmp_result_summary
                 st.markdown(
                     f'<div class="success-banner">✅ Modified ZIP ready! &nbsp;'
-                    f"Processed: <b>{s['success']}</b> &nbsp;·&nbsp; "
-                    f"Skipped: <b>{s['skipped']}</b> &nbsp;·&nbsp; "
+                    f"Processed: <b>{s['success']}</b> &nbsp;&middot;&nbsp; "
+                    f"Skipped: <b>{s['skipped']}</b> &nbsp;&middot;&nbsp; "
                     f"Errors: <b>{s['errors']}</b></div>",
                     unsafe_allow_html=True)
                 mc1, mc2, mc3, mc4 = st.columns(4)
